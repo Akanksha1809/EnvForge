@@ -1,0 +1,65 @@
+[project]
+name = "envforge-api"
+version = "0.1.0"
+description = "EnvForge API and worker — ephemeral environment platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy[asyncio]>=2.0.35",
+    "asyncpg>=0.30.0",
+    "alembic>=1.13.3",
+    "pydantic>=2.9.2",
+    "pydantic-settings>=2.5.2",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.2.0",
+    "celery[redis]>=5.4.0",
+    "redis>=5.1.1",
+    "httpx>=0.27.2",
+    "structlog>=24.4.0",
+    "prometheus-client>=0.21.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-instrumentation-fastapi>=0.48b0",
+    "python-multipart>=0.0.12",
+    "email-validator>=2.2.0",
+    "pyyaml>=6.0.2",
+    "croniter>=3.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "aiosqlite>=0.20.0",
+    "faker>=30.3.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008 (no function calls in defaults) is FastAPI's standard `Depends(...)`
+# idiom — every route in this codebase uses it intentionally.
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
