@@ -18,3 +18,52 @@ class PlatformRole(StrEnum):
 class TeamRole(StrEnum):
     ADMIN = "admin"
     MEMBER = "member"
+
+
+class TemplateType(StrEnum):
+    BASIC_BACKEND = "basic_backend"
+    FULLSTACK = "fullstack"
+    MICROSERVICES = "microservices"
+    CUSTOM = "custom"
+
+
+class EnvironmentState(StrEnum):
+    """The lifecycle state machine. Valid transitions live in
+    app/services/lifecycle.py — this enum only names the states."""
+
+    REQUESTED = "requested"
+    VALIDATING = "validating"
+    QUEUED = "queued"
+    PROVISIONING = "provisioning"
+    DEPLOYING = "deploying"
+    HEALTH_CHECKING = "health_checking"
+    READY = "ready"
+    FAILED = "failed"
+    DELETING = "deleting"
+    DELETED = "deleted"
+    EXPIRED = "expired"
+
+
+class EventTrigger(StrEnum):
+    USER = "user"
+    WEBHOOK = "webhook"
+    SYSTEM = "system"
+    TTL = "ttl"
+    RETRY = "retry"
+
+
+class JobType(StrEnum):
+    PROVISION = "provision"
+    DEPLOY = "deploy"
+    HEALTH_CHECK = "health_check"
+    CLEANUP = "cleanup"
+    REFRESH = "refresh"
+
+
+class JobStatus(StrEnum):
+    PENDING = "pending"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    RETRYING = "retrying"

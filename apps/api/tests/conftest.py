@@ -53,3 +53,24 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+async def register_and_login(
+    client: AsyncClient,
+    email: str,
+    *,
+    full_name: str = "Test User",
+    password: str = "supersecret123",
+) -> dict[str, str]:
+    """Shared helper for integration tests: registers a user (the first one
+    in a given test's DB becomes platform_admin — see auth_service) and
+    returns Authorization headers for it."""
+    await client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "full_name": full_name, "password": password},
+    )
+    login_resp = await client.post(
+        "/api/v1/auth/login", json={"email": email, "password": password}
+    )
+    token = login_resp.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}

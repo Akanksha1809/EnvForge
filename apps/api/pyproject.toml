@@ -46,7 +46,10 @@ target-version = "py312"
 select = ["E", "F", "I", "UP", "B"]
 # B008 (no function calls in defaults) is FastAPI's standard `Depends(...)`
 # idiom — every route in this codebase uses it intentionally.
-ignore = ["B008"]
+# UP046/UP047 (PEP 695 generics) are flagged as unsafe here since the
+# generic is bound to Pydantic's typing.Generic-based BaseModel — keep the
+# compatible form.
+ignore = ["B008", "UP046", "UP047"]
 
 [tool.mypy]
 python_version = "3.12"
