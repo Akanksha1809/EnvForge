@@ -84,6 +84,28 @@ services:
       redis:
         condition: service_healthy
 
+  # Runs the TTL/orphan/stale-job sweeps on their own schedule (see
+  # app/workers/celery_app.py's beat_schedule). A separate process from
+  # `worker` — beat only schedules tasks, it never runs them itself.
+  beat:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://envforge:envforge@postgres:5432/envforge
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - ./apps/api:/app
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./apps/frontend

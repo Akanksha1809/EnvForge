@@ -10,7 +10,7 @@ phase lands.
 | 2 | Core platform: Application Registry, Teams, Environment Templates (versioned), Environment API + lifecycle state machine + event audit trail, Jobs API | ✅ Done |
 | 3 | Provisioning: real Terraform modules + `kind` cluster, Celery provisioning pipeline, sample app A, end-to-end deploy to a live local cluster | ✅ Done |
 | 4 | GitHub integration: webhooks, signature verification, PR open/sync/close handling, commit statuses, preview URLs, webhook simulator | ✅ Done |
-| 5 | Environment management: TTL expiration, cleanup/GC engine, resource quotas, retry/recovery, extend/refresh | Planned |
+| 5 | Environment management: TTL expiration, cleanup/GC engine, resource quotas, retry/recovery, extend/refresh | ✅ Done |
 | 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | Planned |
 | 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | Planned |
 | 8 | Advanced features: cost estimation engine, template versioning UX, environment cloning, optimization recommendations, AWS Terraform (written, not executed) | Planned |
@@ -127,6 +127,52 @@ phase lands.
   code path (signature check, idempotency, PR state machine) is 100% real;
   only GitHub's own delivery transport is stood in for, since this sandbox
   has no public URL for github.com to call.
+
+## Phase 5 notes
+
+- A real `beat` process (separate container/process from `worker` — beat
+  only *schedules*, never executes) runs three independent sweeps on
+  their own intervals: TTL expiration, orphaned-namespace detection, and
+  stale-job detection. Each is idempotent and safe to overlap with itself.
+- **Quotas** are enforced at three scopes — per user
+  (`max_active_environments_per_user`, global setting), per application
+  (`Application.max_active_environments`, optional override, `None` =
+  inherit the team's), and per team (`Team.max_active_environments`,
+  already built in Phase 2) — all in `app/services/quotas.py`, checked
+  together in `create_environment` via `check_all_quotas`. CPU/memory/
+  storage limits remain enforced at the Kubernetes level (each
+  environment's namespace ResourceQuota, Phase 3) — this module is only
+  about *how many* environments can exist at once.
+- **Found and fixed**: `POST /jobs/{id}/retry` reset a job's status to
+  `PENDING` but never actually re-dispatched the Celery task — so
+  "retrying" a failed job silently did nothing until something else
+  happened to re-trigger it. Fixed to redispatch the correct task
+  (`provision_environment` or `destroy_environment`, by `job_type`) and
+  land on `QUEUED` with a `celery_task_id` when dispatch succeeds, the
+  same contract `create_environment`/`request_deletion` already use.
+- **Orphan detection** is honest about scope: a namespace is "orphaned"
+  only when no non-terminal Environment row claims it (cross-referenced
+  by the `envforge.io/environment` label every namespace carries — see
+  the environment-namespace Terraform module, Phase 3). When a matching
+  Environment row exists but is terminal (e.g. a destroy that previously
+  failed partway), cleanup goes through `terraform destroy` against its
+  real workspace/state rather than a blunt `kubectl delete namespace`, so
+  Terraform's own state stays consistent; a true orphan (no row at all)
+  falls back to deleting the namespace directly since there's no
+  Terraform state to reconcile against.
+- **Stale job detection** exists because a worker process can simply die
+  mid-task (OOM-killed, container restart) leaving a `Job` stuck
+  `RUNNING` forever with nothing to ever mark it otherwise. The threshold
+  (`stale_job_timeout_minutes`, default 35) is deliberately set above
+  Celery's own `task_time_limit` (30 min) — if a job is still `RUNNING`
+  past that, the worker that owned it is gone, not just slow.
+- The lifecycle table now lets *any* non-terminal, non-`DELETING` state
+  transition to `EXPIRED` (previously only `READY` could) — an
+  environment stuck mid-provisioning past its TTL needs to expire too,
+  not just one that made it all the way to `READY`.
+- `POST /environments/{id}/expire` is the manual cleanup control the spec
+  asks for: force an environment through the same expire-then-delete path
+  the TTL sweep uses, on demand, without waiting for the schedule.
 
 ## Known, deliberate simplifications
 

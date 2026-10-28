@@ -43,6 +43,10 @@ class Application(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     dependencies: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     environment_ttl_hours: Mapped[int] = mapped_column(Integer, default=48, nullable=False)
+    # None = inherit the team's quota only; set to cap this specific
+    # application's concurrent environments independently (e.g. a
+    # resource-hungry app the team wants capped tighter than its peers).
+    max_active_environments: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     team: Mapped["Team"] = relationship()

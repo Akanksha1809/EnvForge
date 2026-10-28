@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     # 127.0.0.1 address the host's own kubeconfig records.
     running_in_docker: bool = False
 
+    # Environment management / cleanup (Phase 5)
+    max_active_environments_per_user: int = 10
+    max_environment_lifetime_hours: int = 24 * 14  # 14 days — a hard ceiling extend() can't cross
+    ttl_sweep_interval_seconds: int = 300
+    orphan_sweep_interval_seconds: int = 600
+    stale_job_timeout_minutes: int = 35  # > celery's task_time_limit, so a RUNNING job past this
+    # means the worker process that owned it is gone, not just slow.
+
     # Observability
     otel_exporter_otlp_endpoint: str | None = None
     prometheus_enabled: bool = True

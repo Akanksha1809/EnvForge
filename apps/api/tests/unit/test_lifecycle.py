@@ -27,6 +27,15 @@ def _env(state: EnvironmentState) -> Environment:
         (EnvironmentState.DELETED, EnvironmentState.READY, False),
         (EnvironmentState.DELETED, EnvironmentState.DELETING, False),
         (EnvironmentState.EXPIRED, EnvironmentState.DELETING, True),
+        # Every non-terminal, non-DELETING state can expire on its own TTL.
+        (EnvironmentState.REQUESTED, EnvironmentState.EXPIRED, True),
+        (EnvironmentState.QUEUED, EnvironmentState.EXPIRED, True),
+        (EnvironmentState.PROVISIONING, EnvironmentState.EXPIRED, True),
+        (EnvironmentState.READY, EnvironmentState.EXPIRED, True),
+        (EnvironmentState.FAILED, EnvironmentState.EXPIRED, True),
+        (EnvironmentState.DELETING, EnvironmentState.EXPIRED, False),
+        (EnvironmentState.DELETED, EnvironmentState.EXPIRED, False),
+        (EnvironmentState.EXPIRED, EnvironmentState.EXPIRED, False),
     ],
 )
 def test_is_valid_transition(

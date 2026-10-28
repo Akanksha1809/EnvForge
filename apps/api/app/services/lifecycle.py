@@ -53,7 +53,6 @@ _VALID_TRANSITIONS: dict[EnvironmentState, set[EnvironmentState]] = {
     },
     EnvironmentState.READY: {
         EnvironmentState.DELETING,
-        EnvironmentState.EXPIRED,
         # A new commit pushed to the PR redeploys in place — see
         # app.services.environments.redeploy_for_new_commit (Phase 4).
         EnvironmentState.PROVISIONING,
@@ -67,6 +66,18 @@ _VALID_TRANSITIONS: dict[EnvironmentState, set[EnvironmentState]] = {
     EnvironmentState.DELETED: set(),
     EnvironmentState.EXPIRED: {EnvironmentState.DELETING},
 }
+
+# Every non-terminal, non-DELETING state can also expire on its own TTL
+# (the cleanup engine doesn't care whether an environment is READY or
+# stuck mid-provisioning — if its time is up, it's up) — same rationale
+# as every in-flight state already allowing a cancel straight to DELETING.
+for _state, _targets in _VALID_TRANSITIONS.items():
+    if _state not in (
+        EnvironmentState.DELETING,
+        EnvironmentState.DELETED,
+        EnvironmentState.EXPIRED,
+    ):
+        _targets.add(EnvironmentState.EXPIRED)
 
 
 class InvalidTransitionError(Exception):

@@ -76,21 +76,3 @@ async def remove_member(db: AsyncSession, *, team_id: str, user_id: str) -> None
         raise TeamError("User is not a member of this team")
     await db.delete(membership)
     await db.commit()
-
-
-async def count_active_environments_for_team(db: AsyncSession, team_id: str) -> int:
-    from app.models.application import Application
-    from app.models.enums import EnvironmentState
-    from app.models.environment import Environment
-
-    terminal = {
-        EnvironmentState.DELETED.value,
-        EnvironmentState.EXPIRED.value,
-        EnvironmentState.FAILED.value,
-    }
-    result = await db.execute(
-        select(Environment)
-        .join(Application, Application.id == Environment.application_id)
-        .where(Application.team_id == team_id, Environment.state.not_in(terminal))
-    )
-    return len(result.scalars().all())

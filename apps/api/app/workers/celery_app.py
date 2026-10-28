@@ -14,7 +14,7 @@ celery_app = Celery(
     "envforge",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.workers.tasks.provisioning"],
+    include=["app.workers.tasks.provisioning", "app.workers.tasks.cleanup"],
 )
 
 celery_app.conf.update(
@@ -30,8 +30,23 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
-# Populated incrementally: TTL sweep / orphan detection land in Phase 5.
-celery_app.conf.beat_schedule = {}
+# Runs continuously in `celery -A app.workers.celery_app beat` (a separate
+# process from the worker — see docker-compose.yml). Each sweep is
+# independently idempotent, so overlapping runs under a slow sweep are safe.
+celery_app.conf.beat_schedule = {
+    "sweep-expired-environments": {
+        "task": "envforge.sweep_expired_environments",
+        "schedule": settings.ttl_sweep_interval_seconds,
+    },
+    "detect-orphaned-namespaces": {
+        "task": "envforge.detect_orphaned_namespaces",
+        "schedule": settings.orphan_sweep_interval_seconds,
+    },
+    "detect-stale-jobs": {
+        "task": "envforge.detect_stale_jobs",
+        "schedule": settings.orphan_sweep_interval_seconds,
+    },
+}
 
 
 @celery_app.task(name="envforge.health_check")

@@ -292,3 +292,69 @@ def destroy_environment(environment: Environment) -> None:
     # per-environment workspace (including the copied modules/ tree), not
     # just the leaf directory.
     shutil.rmtree(tf_dir.parent.parent, ignore_errors=True)
+
+
+def list_managed_namespaces() -> list[dict[str, str]]:
+    """Every real namespace in the cluster EnvForge created, by label
+    (see infrastructure/terraform/modules/environment-namespace) — the
+    source of truth the orphan-detection sweep (Phase 5) cross-references
+    against the Environment table, since a namespace with no matching
+    non-terminal Environment row is, by definition, orphaned."""
+    settings = get_settings()
+    kubeconfig = _effective_kubeconfig_path(settings.kubeconfig_path)
+    result = subprocess.run(
+        [
+            "kubectl",
+            f"--kubeconfig={Path(kubeconfig).expanduser()}",
+            f"--context={settings.kube_context}",
+            "get",
+            "namespaces",
+            "-l",
+            "envforge.io/managed=true",
+            "-o",
+            "json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        logger.warning("provisioning.list_namespaces_failed", stderr=result.stderr[-2000:])
+        return []
+
+    namespaces = json.loads(result.stdout).get("items", [])
+    return [
+        {
+            "name": ns["metadata"]["name"],
+            "environment_id": ns["metadata"].get("labels", {}).get("envforge.io/environment", ""),
+        }
+        for ns in namespaces
+    ]
+
+
+def delete_namespace_directly(namespace: str) -> None:
+    """Fallback for a true orphan with no corresponding Environment row
+    (so there's no Terraform workspace/state to run `destroy` against) —
+    deletes the Kubernetes namespace directly. Real environments are
+    always torn down via `destroy_environment` instead, which goes
+    through Terraform."""
+    settings = get_settings()
+    kubeconfig = _effective_kubeconfig_path(settings.kubeconfig_path)
+    result = subprocess.run(
+        [
+            "kubectl",
+            f"--kubeconfig={Path(kubeconfig).expanduser()}",
+            f"--context={settings.kube_context}",
+            "delete",
+            "namespace",
+            namespace,
+            "--wait=false",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ProvisioningError(
+            f"Failed to delete orphaned namespace '{namespace}'", stderr=result.stderr
+        )

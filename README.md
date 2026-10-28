@@ -9,7 +9,7 @@ This is a from-scratch, phase-by-phase build. See
 [`docs/roadmap.md`](docs/roadmap.md) for what's implemented vs. planned, and
 [`docs/architecture.md`](docs/architecture.md) for the system design.
 
-## Status: Phases 1–4 done ✅ (of 9)
+## Status: Phases 1–5 done ✅ (of 9)
 
 What works today, for real (no mocks):
 
@@ -31,11 +31,17 @@ What works today, for real (no mocks):
   open/synchronize/closed handling (redeploy in place, never a duplicate
   environment), and real commit-status/PR-comment posting (a no-op until
   `GITHUB_API_TOKEN` is configured — see below).
+- **Environment management**: a real Celery Beat process runs TTL
+  expiration, orphaned-namespace detection, and stale-job detection on
+  independent schedules; quotas enforced per user/application/team;
+  `POST /jobs/{id}/retry` actually re-dispatches the failed task;
+  `POST /environments/{id}/expire` is the manual cleanup control.
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 developer
   portal shell — login/register, protected routing, a dashboard shell
   authenticated against the live API (the full dashboard lands in Phase 6).
-- **Infra**: Docker Compose stack (Postgres, Redis, API, worker, frontend,
-  Prometheus, Grafana) plus a real local `kind` cluster with `ingress-nginx`.
+- **Infra**: Docker Compose stack (Postgres, Redis, API, worker, beat,
+  frontend, Prometheus, Grafana) plus a real local `kind` cluster with
+  `ingress-nginx`.
 - **CI**: GitHub Actions for backend, frontend, and Terraform (fmt/validate
   across all four modules).
 

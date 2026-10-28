@@ -168,6 +168,34 @@ async def extend_environment(
     return environment
 
 
+@router.post("/{environment_id}/expire", response_model=EnvironmentOut)
+async def force_expire_environment(
+    environment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Environment:
+    """Manual cleanup control: immediately expire-and-delete an
+    environment regardless of its TTL, bypassing the scheduled sweep.
+    Restricted to the same permission as deletion — this is a deletion,
+    just triggered through the expiry path rather than the delete one."""
+    environment = await _get_environment_or_404(db, environment_id)
+    rbac.require_permission(current_user, rbac.Permission.ENVIRONMENT_DELETE)
+
+    environment = await environments_service.expire_environment(
+        db, environment, trigger=EventTrigger.USER
+    )
+
+    await audit_record(
+        db,
+        action="environment.force_expire",
+        resource_type="environment",
+        resource_id=environment_id,
+        actor_user_id=current_user.id,
+        actor_label=current_user.email,
+    )
+    return environment
+
+
 @router.post(
     "/{environment_id}/refresh", response_model=EnvironmentOut, status_code=status.HTTP_202_ACCEPTED
 )

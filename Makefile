@@ -9,17 +9,17 @@ setup:
 	test -f .env || cp .env.example .env
 	test -f apps/frontend/.env || cp apps/frontend/.env.example apps/frontend/.env
 
-## Bring up the full local stack (Postgres, Redis, API, worker, frontend, Prometheus, Grafana).
+## Bring up the full local stack (Postgres, Redis, API, worker, beat, frontend, Prometheus, Grafana).
 dev:
 	$(COMPOSE) up -d --build
 
 dev-down:
 	$(COMPOSE) down
 
-## The api/worker containers don't auto-reload (see docker-compose.yml) —
-## run this after changing backend code.
+## The api/worker/beat containers don't auto-reload (see docker-compose.yml)
+## — run this after changing backend code.
 restart:
-	$(COMPOSE) build api worker && $(COMPOSE) up -d api worker
+	$(COMPOSE) build api worker beat && $(COMPOSE) up -d api worker beat
 
 logs:
 	$(COMPOSE) logs -f api worker

@@ -20,6 +20,7 @@ class ApplicationCreateRequest(BaseModel):
     env_vars: dict[str, str] = Field(default_factory=dict)
     dependencies: list[str] = Field(default_factory=list)
     environment_ttl_hours: int = Field(default=48, ge=1, le=24 * 30)
+    max_active_environments: int | None = Field(default=None, ge=1, le=1000)
 
 
 class ApplicationUpdateRequest(BaseModel):
@@ -36,6 +37,7 @@ class ApplicationUpdateRequest(BaseModel):
     env_vars: dict[str, str] | None = None
     dependencies: list[str] | None = None
     environment_ttl_hours: int | None = Field(default=None, ge=1, le=24 * 30)
+    max_active_environments: int | None = Field(default=None, ge=1, le=1000)
     is_active: bool | None = None
 
 
@@ -58,6 +60,7 @@ class ApplicationOut(BaseModel):
     env_vars: dict[str, str]
     dependencies: list[str]
     environment_ttl_hours: int
+    max_active_environments: int | None
     is_active: bool
     created_at: datetime
     updated_at: datetime

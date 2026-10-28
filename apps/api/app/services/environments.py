@@ -16,13 +16,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.application import Application
 from app.models.enums import EnvironmentState, EventTrigger, JobStatus, JobType
 from app.models.environment import Environment, EnvironmentEvent
 from app.models.job import Job
 from app.models.team import Team
-from app.services import lifecycle, task_dispatch
-from app.services.teams import count_active_environments_for_team
+from app.services import lifecycle, quotas, task_dispatch
 
 
 class EnvironmentError(Exception):
@@ -62,13 +62,12 @@ async def create_environment(
         raise EnvironmentError("Cannot create an environment for an inactive application")
 
     team = await db.get(Team, application.team_id)
-    if team is not None:
-        active_count = await count_active_environments_for_team(db, team.id)
-        if active_count >= team.max_active_environments:
-            raise QuotaExceededError(
-                f"Team '{team.slug}' is at its active environment quota "
-                f"({active_count}/{team.max_active_environments})"
-            )
+    try:
+        await quotas.check_all_quotas(
+            db, user_id=requested_by_user_id, application=application, team=team
+        )
+    except quotas.QuotaExceededError as exc:
+        raise QuotaExceededError(str(exc)) from exc
 
     resolved_name = name or await _generate_environment_name(db, application, pr_number)
     ttl_hours = application.environment_ttl_hours
@@ -228,8 +227,17 @@ async def extend_environment(
     ):
         raise EnvironmentError(f"Cannot extend an environment in state '{environment.state}'")
 
+    settings = get_settings()
     base = environment.ttl_expires_at or datetime.now(UTC)
-    environment.ttl_expires_at = base + timedelta(hours=additional_hours)
+    requested_expiry = base + timedelta(hours=additional_hours)
+    max_expiry = environment.created_at + timedelta(hours=settings.max_environment_lifetime_hours)
+    if requested_expiry > max_expiry:
+        raise EnvironmentError(
+            f"Cannot extend beyond this platform's maximum environment lifetime "
+            f"({settings.max_environment_lifetime_hours} hours from creation)"
+        )
+
+    environment.ttl_expires_at = requested_expiry
     db.add(
         EnvironmentEvent(
             environment_id=environment.id,
@@ -300,3 +308,20 @@ async def request_deletion(
         await db.commit()
 
     return environment
+
+
+async def expire_environment(
+    db: AsyncSession, environment: Environment, *, trigger: EventTrigger = EventTrigger.TTL
+) -> Environment:
+    """TTL ran out (or a platform admin force-expired it manually). Marks
+    EXPIRED, then immediately requests deletion — expiring an environment
+    always means tearing it down, there's no "expired but still running"
+    state in this platform."""
+    current = EnvironmentState(environment.state)
+    if current in (EnvironmentState.DELETED, EnvironmentState.DELETING, EnvironmentState.EXPIRED):
+        return environment
+
+    environment = await lifecycle.transition(
+        db, environment, target=EnvironmentState.EXPIRED, trigger=trigger
+    )
+    return await request_deletion(db, environment, actor_user_id=None, trigger=trigger)
