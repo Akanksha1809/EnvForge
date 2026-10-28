@@ -25,3 +25,4 @@ apps/frontend/.vite/
 .DS_Store
 *.log
 /tmp/
+.claude/scheduled_tasks.lock

@@ -1,10 +1,13 @@
 """Environment creation/extend/refresh/delete business logic.
 
-Provisioning itself (actually standing up infrastructure) is implemented in
-Phase 3 — this module takes an environment through REQUESTED -> VALIDATING
--> QUEUED (all fast, synchronous checks) and creates the Job row a Celery
-task will later pick up. No endpoint here ever blocks on infrastructure
-work, satisfying the spec's "API must not block on provisioning" rule.
+This module takes an environment through REQUESTED -> VALIDATING -> QUEUED
+(all fast, synchronous checks) and creates the Job row a Celery task picks
+up to actually provision or destroy infrastructure
+(app/workers/tasks/provisioning.py). No endpoint here ever blocks on
+infrastructure work, satisfying the spec's "API must not block on
+provisioning" rule. Task dispatch is best-effort (see
+app/services/task_dispatch.py): if the broker is unreachable the Job row
+simply stays PENDING rather than the request failing.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -18,7 +21,7 @@ from app.models.enums import EnvironmentState, EventTrigger, JobStatus, JobType
 from app.models.environment import Environment, EnvironmentEvent
 from app.models.job import Job
 from app.models.team import Team
-from app.services import lifecycle
+from app.services import lifecycle, task_dispatch
 from app.services.teams import count_active_environments_for_team
 
 
@@ -117,6 +120,15 @@ async def create_environment(
     db.add(job)
     await db.commit()
     await db.refresh(environment)
+    await db.refresh(job)
+
+    task_id = task_dispatch.enqueue("envforge.provision_environment", job_id=job.id)
+    if task_id:
+        job.status = JobStatus.QUEUED.value
+        job.celery_task_id = task_id
+        db.add(job)
+        await db.commit()
+
     return environment
 
 
@@ -162,7 +174,7 @@ async def request_deletion(
     if not lifecycle.is_valid_transition(current, EnvironmentState.DELETING):
         raise EnvironmentError(f"Cannot delete an environment in state '{environment.state}'")
 
-    await lifecycle.transition(
+    environment = await lifecycle.transition(
         db,
         environment,
         target=EnvironmentState.DELETING,
@@ -170,19 +182,40 @@ async def request_deletion(
         actor_user_id=actor_user_id,
     )
 
-    # No real infrastructure exists yet for environments provisioned before
-    # Phase 3 lands, so deletion completes immediately. Once the Terraform
-    # pipeline is wired up, this becomes a Celery task that only transitions
-    # to DELETED after `terraform destroy` succeeds.
-    environment = await lifecycle.transition(
-        db,
-        environment,
-        target=EnvironmentState.DELETED,
-        trigger=trigger,
-        actor_user_id=actor_user_id,
+    if not environment.namespace:
+        # Nothing was ever actually provisioned (it never got past QUEUED,
+        # or provisioning failed before creating a namespace) — there's no
+        # infrastructure to tear down, so this completes immediately rather
+        # than waiting on a Celery task that has nothing real to do.
+        environment = await lifecycle.transition(
+            db,
+            environment,
+            target=EnvironmentState.DELETED,
+            trigger=trigger,
+            actor_user_id=actor_user_id,
+        )
+        environment.destroyed_at = datetime.now(UTC)
+        db.add(environment)
+        await db.commit()
+        await db.refresh(environment)
+        return environment
+
+    job = Job(
+        job_type=JobType.CLEANUP.value,
+        status=JobStatus.PENDING.value,
+        environment_id=environment.id,
+        payload={"environment_id": environment.id, "namespace": environment.namespace},
     )
-    environment.destroyed_at = datetime.now(UTC)
-    db.add(environment)
+    db.add(job)
     await db.commit()
     await db.refresh(environment)
+    await db.refresh(job)
+
+    task_id = task_dispatch.enqueue("envforge.destroy_environment", job_id=job.id)
+    if task_id:
+        job.status = JobStatus.QUEUED.value
+        job.celery_task_id = task_id
+        db.add(job)
+        await db.commit()
+
     return environment

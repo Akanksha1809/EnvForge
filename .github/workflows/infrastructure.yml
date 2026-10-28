@@ -1,0 +1,57 @@
+name: Infrastructure CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+  pull_request:
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - infrastructure/terraform/modules/environment-namespace
+          - infrastructure/terraform/modules/environment-app
+          - infrastructure/terraform/modules/environment-dependency
+          - infrastructure/terraform/environments/local
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive infrastructure/terraform
+
+      - name: terraform init (no backend, no cloud credentials needed)
+        working-directory: ${{ matrix.module }}
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        working-directory: ${{ matrix.module }}
+        run: terraform validate
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.2"
+      - name: Lint charts (if any exist yet)
+        run: |
+          if [ -d infrastructure/helm ] && [ -n "$(find infrastructure/helm -maxdepth 1 -mindepth 1 -type d 2>/dev/null)" ]; then
+            for chart in infrastructure/helm/*/; do
+              helm lint "$chart"
+            done
+          else
+            echo "No Helm charts yet — skipping."
+          fi

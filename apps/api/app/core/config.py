@@ -52,12 +52,19 @@ class Settings(BaseSettings):
 
     # Provisioning
     terraform_binary: str = "terraform"
+    terraform_module_root: str = "/infrastructure/terraform/environments/local"
     terraform_workspace_root: str = "/tmp/envforge/terraform-workspaces"
-    kubeconfig_path: str | None = None
+    kubeconfig_path: str = "~/.kube/config"
     kube_context: str = "kind-envforge"
     provisioning_namespace_prefix: str = "envforge"
     default_environment_ttl_hours: int = 48
     max_concurrent_provisioning_jobs: int = 5
+    ingress_base_domain: str = "127.0.0.1.nip.io"
+    ingress_host_port: int = 18080
+    # True inside the worker container: Terraform there needs to reach the
+    # kind cluster's API server through the Docker host rather than via the
+    # 127.0.0.1 address the host's own kubeconfig records.
+    running_in_docker: bool = False
 
     # Observability
     otel_exporter_otlp_endpoint: str | None = None

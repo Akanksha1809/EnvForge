@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-down test test-backend test-frontend lint fmt migrate demo kind-up kind-down logs
+.PHONY: setup dev dev-down restart test test-backend test-frontend lint fmt migrate demo kind-up kind-down kind-ingress logs worker-host build-sample-backend
 
 COMPOSE := docker-compose
 
@@ -15,6 +15,11 @@ dev:
 
 dev-down:
 	$(COMPOSE) down
+
+## The api/worker containers don't auto-reload (see docker-compose.yml) —
+## run this after changing backend code.
+restart:
+	$(COMPOSE) build api worker && $(COMPOSE) up -d api worker
 
 logs:
 	$(COMPOSE) logs -f api worker
@@ -43,8 +48,27 @@ migrate:
 kind-up:
 	kind create cluster --name envforge --config infrastructure/kubernetes/kind-cluster.yaml
 
+## Install ingress-nginx into the kind cluster (run once after kind-up).
+kind-ingress:
+	kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.3/deploy/static/provider/kind/deploy.yaml
+	kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=180s
+
 kind-down:
 	kind delete cluster --name envforge
+
+## Build a sample app image and load it into the kind cluster so EnvForge
+## can actually deploy it (`kind load` makes it available to the cluster
+## without pushing to a registry).
+build-sample-backend:
+	docker build -t envforge/sample-backend:dev sample-apps/backend
+	kind load docker-image envforge/sample-backend:dev --name envforge
+
+## Run a Celery worker directly on the host rather than in Docker. Needed
+## for real provisioning if the dockerized `worker` service's
+## host.docker.internal path to the kind cluster isn't reachable on your
+## setup — a host process reaches `kind` exactly like your own `kubectl` does.
+worker-host:
+	cd apps/api && .venv/bin/celery -A app.workers.celery_app worker --loglevel=info
 
 ## Run the full reproducible demo scenario end-to-end (see scripts/demo.sh).
 demo:

@@ -96,7 +96,11 @@ async def test_team_application_environment_full_flow(client: AsyncClient) -> No
     jobs = jobs_resp.json()["items"]
     assert len(jobs) == 1
     assert jobs[0]["job_type"] == "provision"
-    assert jobs[0]["status"] == "pending"
+    # "pending" if no broker is reachable (CI), "queued" if a real Redis
+    # happens to be up (e.g. local dev with `docker compose up`) and the
+    # dispatch in app.services.task_dispatch actually succeeded — either is
+    # correct; this test only asserts a Job row was created.
+    assert jobs[0]["status"] in ("pending", "queued")
 
     extend_resp = await client.post(
         f"/api/v1/environments/{environment['id']}/extend",

@@ -46,8 +46,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # No --reload: on this Colima/virtiofs setup, bind-mount file events
+    # don't propagate reliably to the container's file watcher (confirmed:
+    # both inotify and watchfiles' polling mode either miss changes or
+    # make the initial scan effectively hang). Restart explicitly after
+    # backend code changes with `make restart` instead.
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   worker:
     build:
@@ -59,9 +64,20 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      RUNNING_IN_DOCKER: "true"
+      TERRAFORM_MODULE_ROOT: /infrastructure/terraform/environments/local
+      KUBE_CONTEXT: kind-envforge
     volumes:
       - ./apps/api:/app
+      - ./infrastructure:/infrastructure:ro
       - ~/.kube:/root/.kube:ro
+    # Terraform (running inside this container) needs to reach the kind
+    # cluster's API server, which the host's kubeconfig records as
+    # 127.0.0.1 — inside a container that's the container itself, not the
+    # Docker host. `host.docker.internal` is rewritten in for this reason;
+    # see app.services.provisioning._effective_kubeconfig_path.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

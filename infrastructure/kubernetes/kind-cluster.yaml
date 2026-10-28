@@ -1,0 +1,22 @@
+# Local kind cluster EnvForge provisions real environments into.
+# Port mappings follow the kind + ingress-nginx "Ingress" guide. Host ports
+# are deliberately uncommon (18080/18443) since 80/443/8080/8443 are
+# frequently already bound by other local tooling (SSH tunnels, etc).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: envforge
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 18080
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 18443
+        protocol: TCP
