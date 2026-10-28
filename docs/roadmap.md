@@ -9,7 +9,7 @@ phase lands.
 | 1 | Foundation: repo scaffold, FastAPI skeleton, Postgres+Alembic, local JWT auth + RBAC, Celery wiring, Docker Compose, React+Vite+Tailwind portal shell, CI | ✅ Done |
 | 2 | Core platform: Application Registry, Teams, Environment Templates (versioned), Environment API + lifecycle state machine + event audit trail, Jobs API | ✅ Done |
 | 3 | Provisioning: real Terraform modules + `kind` cluster, Celery provisioning pipeline, sample app A, end-to-end deploy to a live local cluster | ✅ Done |
-| 4 | GitHub integration: webhooks, signature verification, PR open/sync/close handling, commit statuses, preview URLs, webhook simulator | Planned |
+| 4 | GitHub integration: webhooks, signature verification, PR open/sync/close handling, commit statuses, preview URLs, webhook simulator | ✅ Done |
 | 5 | Environment management: TTL expiration, cleanup/GC engine, resource quotas, retry/recovery, extend/refresh | Planned |
 | 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | Planned |
 | 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | Planned |
@@ -94,6 +94,39 @@ phase lands.
   recovers in time — the same designed-for failure path as any other
   provisioning error, which is itself a reasonable demonstration of it
   working as intended.
+
+## Phase 4 notes
+
+- The lifecycle table gained two more edges: `READY -> PROVISIONING` and
+  `FAILED -> PROVISIONING`, both for the same reason — a new commit
+  pushed to an already-provisioned (or previously-failed) PR redeploys
+  in place via `environments_service.redeploy_for_new_commit` rather
+  than creating a second environment for the same PR. `terraform apply`
+  against the existing per-environment workspace/state is idempotent, so
+  this is a real redeploy, not a relabeled fresh provision.
+- Idempotency is enforced at two levels: `WebhookDelivery` dedupes by
+  GitHub's own `X-GitHub-Delivery` id (so a redelivered webhook — GitHub
+  retries on timeout/5xx — is a no-op), and `get_active_environment_for_pr`
+  means even a semantically-duplicate event (e.g. `synchronize` arriving
+  before `opened`, or `opened` redelivered under a new delivery id for
+  some reason) still can't create a second environment for one PR. Both
+  are exercised in `tests/integration/test_github_webhook_api.py`.
+- A redeploy skips re-dispatching a new Terraform run while one is
+  already in flight for that environment (QUEUED/PROVISIONING/DEPLOYING/
+  HEALTH_CHECKING) — the per-environment Terraform state has no locking,
+  so two concurrent `apply`s against it would race. The commit SHA is
+  still updated immediately; only the Terraform run is deferred.
+- GitHub API calls (commit statuses, PR comments) go through
+  `app/services/github_client.py`, which is a real HTTP client against
+  the real GitHub REST API — but every call is a logged no-op when
+  `GITHUB_API_TOKEN` isn't set, which is the default here (no real GitHub
+  App/PAT in this sandbox). Configure a token against a real repo and the
+  exact same code starts actually posting.
+- `scripts/simulate_webhook.py` signs payloads with the real HMAC
+  verification this project's own webhook endpoint checks — the handler
+  code path (signature check, idempotency, PR state machine) is 100% real;
+  only GitHub's own delivery transport is stood in for, since this sandbox
+  has no public URL for github.com to call.
 
 ## Known, deliberate simplifications
 

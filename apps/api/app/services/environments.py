@@ -136,6 +136,87 @@ async def get_environment(db: AsyncSession, environment_id: str) -> Environment 
     return await db.get(Environment, environment_id)
 
 
+_TERMINAL_STATES = {EnvironmentState.DELETED.value, EnvironmentState.EXPIRED.value}
+
+
+async def get_active_environment_for_pr(
+    db: AsyncSession, *, application_id: str, pr_number: int
+) -> Environment | None:
+    """The non-terminal environment for this (application, PR) pair, if
+    any — used by the GitHub webhook handler to find the environment a
+    `synchronize`/`closed` event applies to, and to avoid creating a
+    second environment for a PR that already has one."""
+    result = await db.execute(
+        select(Environment)
+        .where(
+            Environment.application_id == application_id,
+            Environment.pr_number == pr_number,
+            Environment.state.not_in(_TERMINAL_STATES),
+        )
+        .order_by(Environment.created_at.desc())
+    )
+    return result.scalars().first()
+
+
+async def redeploy_for_new_commit(
+    db: AsyncSession,
+    environment: Environment,
+    *,
+    commit_sha: str,
+    trigger: EventTrigger,
+) -> Environment:
+    """A new commit was pushed to the PR this environment tracks. Reuses
+    the same Environment row (never creates a second one for the same
+    PR) and re-enters the provisioning pipeline from whatever state it's
+    currently in — `terraform apply` against the existing workspace/state
+    is idempotent, so this is a real redeploy, not a fresh provision."""
+    current = EnvironmentState(environment.state)
+    if current in (EnvironmentState.DELETED, EnvironmentState.DELETING, EnvironmentState.EXPIRED):
+        raise EnvironmentError(f"Cannot redeploy an environment in state '{environment.state}'")
+
+    environment.pr_commit_sha = commit_sha
+    db.add(
+        EnvironmentEvent(
+            environment_id=environment.id,
+            previous_state=environment.state,
+            new_state=environment.state,
+            trigger=trigger.value,
+            metadata_json={"note": "new commit pushed", "commit_sha": commit_sha},
+        )
+    )
+    db.add(environment)
+
+    if current not in (EnvironmentState.READY, EnvironmentState.FAILED):
+        # A provisioning run is already in flight for this environment —
+        # its Terraform workspace uses unlocked local state, so running a
+        # second `apply` concurrently against it is unsafe. The commit
+        # SHA is already updated above; the in-flight run finishing (or
+        # failing) is what the next redeploy, if any, will build on.
+        await db.commit()
+        await db.refresh(environment)
+        return environment
+
+    job = Job(
+        job_type=JobType.PROVISION.value,
+        status=JobStatus.PENDING.value,
+        environment_id=environment.id,
+        payload={"environment_id": environment.id, "commit_sha": commit_sha, "redeploy": True},
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(environment)
+    await db.refresh(job)
+
+    task_id = task_dispatch.enqueue("envforge.provision_environment", job_id=job.id)
+    if task_id:
+        job.status = JobStatus.QUEUED.value
+        job.celery_task_id = task_id
+        db.add(job)
+        await db.commit()
+
+    return environment
+
+
 async def extend_environment(
     db: AsyncSession, environment: Environment, *, additional_hours: int, actor_user_id: str | None
 ) -> Environment:

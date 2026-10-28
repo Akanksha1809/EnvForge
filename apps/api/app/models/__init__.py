@@ -8,6 +8,7 @@ from app.models.environment_template import EnvironmentTemplate  # noqa: F401
 from app.models.job import Job  # noqa: F401
 from app.models.team import Team, TeamMembership  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.webhook_delivery import WebhookDelivery  # noqa: F401
 
 __all__ = [
     "User",
@@ -19,4 +20,5 @@ __all__ = [
     "Environment",
     "EnvironmentEvent",
     "Job",
+    "WebhookDelivery",
 ]

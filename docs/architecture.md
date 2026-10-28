@@ -45,7 +45,7 @@ flowchart TB
     Worker -.traces.-> OTel
 ```
 
-## Request / provisioning flow (target shape, built across Phases 2–3)
+## Request / provisioning flow (real, as built in Phases 2–3)
 
 ```mermaid
 sequenceDiagram
@@ -70,6 +70,47 @@ sequenceDiagram
     W->>K8s: poll readiness
     W->>DB: READY (+ preview_url)
     W-->>Dev: GitHub commit status / PR comment (if PR-triggered)
+```
+
+## GitHub webhook workflow (real, as built in Phase 4)
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub (or scripts/simulate_webhook.py)
+    participant API as FastAPI /webhooks/github
+    participant WH as webhooks service
+    participant DB as Postgres
+    participant ENV as environments service
+
+    GH->>API: POST pull_request {action, pr, repo, sha} + X-Hub-Signature-256
+    API->>WH: verify_signature(body, header)
+    alt invalid signature
+        WH-->>API: False
+        API-->>GH: 401
+    end
+    API->>WH: already_processed(delivery_id)?
+    alt duplicate delivery
+        WH-->>GH: 200 duplicate_delivery_ignored
+    end
+    WH->>DB: lookup Application by repository.full_name
+    alt no matching application
+        WH-->>GH: 200 ignored
+    end
+    WH->>ENV: get_active_environment_for_pr(app, pr_number)
+    alt action == opened/reopened, no existing env
+        WH->>ENV: create_environment(trigger=WEBHOOK)
+        ENV-->>WH: Environment(QUEUED) + Job enqueued
+        WH->>GH: commit status "pending"
+    else action == synchronize, or opened redelivered
+        WH->>ENV: redeploy_for_new_commit(existing, sha)
+        ENV-->>WH: same Environment, new Job (idempotent apply)
+    else action == closed
+        WH->>ENV: request_deletion(existing)
+        ENV-->>WH: Environment(DELETING) + destroy Job
+    end
+    WH->>DB: record WebhookDelivery(delivery_id, result)
+    WH-->>GH: 200 {status, environment_id}
+    Note over ENV,GH: Once the Celery task reaches READY/FAILED,<br/>it posts the final commit status (+ a PR comment on first READY).
 ```
 
 ## Why these choices

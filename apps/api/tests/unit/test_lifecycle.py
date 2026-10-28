@@ -22,7 +22,7 @@ def _env(state: EnvironmentState) -> Environment:
         (EnvironmentState.DEPLOYING, EnvironmentState.HEALTH_CHECKING, True),
         (EnvironmentState.HEALTH_CHECKING, EnvironmentState.READY, True),
         (EnvironmentState.READY, EnvironmentState.DELETING, True),
-        (EnvironmentState.READY, EnvironmentState.PROVISIONING, False),
+        (EnvironmentState.READY, EnvironmentState.PROVISIONING, True),  # redeploy on new commit
         (EnvironmentState.FAILED, EnvironmentState.QUEUED, True),
         (EnvironmentState.DELETED, EnvironmentState.READY, False),
         (EnvironmentState.DELETED, EnvironmentState.DELETING, False),

@@ -9,29 +9,40 @@ This is a from-scratch, phase-by-phase build. See
 [`docs/roadmap.md`](docs/roadmap.md) for what's implemented vs. planned, and
 [`docs/architecture.md`](docs/architecture.md) for the system design.
 
-## Status: Phase 1 — Foundation ✅
+## Status: Phases 1–4 done ✅ (of 9)
 
 What works today, for real (no mocks):
 
 - **Backend**: FastAPI + SQLAlchemy (async) + Alembic + PostgreSQL, local
-  JWT auth (register/login/refresh/me) with RBAC roles
-  (`platform_admin`/`team_admin`/`developer`/`viewer`), structured JSON
-  logging, Prometheus `/metrics`, an audit log.
-- **Worker**: Celery wired to Redis, connected and ready (no tasks yet —
-  those land with provisioning in Phase 3).
+  JWT auth with RBAC roles (`platform_admin`/`team_admin`/`developer`/
+  `viewer`), structured JSON logging, Prometheus `/metrics`, an audit log.
+- **Core platform**: Application Registry, Teams, versioned Environment
+  Templates, a real environment lifecycle state machine with a persisted
+  event audit trail, and a Jobs API — all behind REST v1 endpoints with
+  pagination/filtering/sorting.
+- **Provisioning**: real Terraform modules (namespace isolation with
+  ResourceQuota/LimitRange/NetworkPolicy, app deployment+service+ingress,
+  ephemeral dependencies) applied by a Celery pipeline against a live
+  local `kind` cluster — verified end-to-end (deploy, real `kubectl`
+  health check, real HTTP traffic through real ingress, clean teardown)
+  in `apps/api/tests/integration/test_provisioning_live.py`.
+- **GitHub integration**: a real webhook endpoint with HMAC-SHA256
+  signature verification and delivery-id idempotency, full PR
+  open/synchronize/closed handling (redeploy in place, never a duplicate
+  environment), and real commit-status/PR-comment posting (a no-op until
+  `GITHUB_API_TOKEN` is configured — see below).
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 developer
-  portal shell — login/register, protected routing, a real dashboard shell
-  authenticated against the live API.
+  portal shell — login/register, protected routing, a dashboard shell
+  authenticated against the live API (the full dashboard lands in Phase 6).
 - **Infra**: Docker Compose stack (Postgres, Redis, API, worker, frontend,
-  Prometheus, Grafana); `kind`/`kubectl`/`helm`/`terraform` confirmed
-  available locally for the real Kubernetes provisioning built in Phase 3.
-- **CI**: GitHub Actions for backend (ruff, mypy, pytest w/ coverage against
-  a real Postgres service container) and frontend (oxlint, vitest, build).
+  Prometheus, Grafana) plus a real local `kind` cluster with `ingress-nginx`.
+- **CI**: GitHub Actions for backend, frontend, and Terraform (fmt/validate
+  across all four modules).
 
-Everything else in the full spec (application registry, environment
-lifecycle engine, provisioning, GitHub integration, cleanup/quotas/cost,
-full dashboard, observability, cloud Terraform) is being built incrementally
-— see the roadmap doc.
+Everything else (environment TTL/cleanup/quotas, the full dashboard,
+observability, cost engine, cloud Terraform, e2e tests) is being built
+incrementally — see [`docs/roadmap.md`](docs/roadmap.md) for the full
+phase-by-phase status and every bug found/fixed along the way.
 
 ## Quick start
 
@@ -54,6 +65,37 @@ Once `make dev` is up:
 
 The **first user you register becomes the platform admin**; everyone after
 that defaults to `developer`.
+
+## Try real provisioning (Phase 3)
+
+```bash
+make kind-up            # bootstrap a local kind cluster
+make kind-ingress       # install ingress-nginx into it
+make build-sample-backend  # build + load the sample app image into kind
+python scripts/register_sample_backend.py   # registers it as an EnvForge application
+```
+
+Then `POST /api/v1/environments` (or use the curl command the script
+prints) and watch `kubectl get pods -A` — a real namespace, deployment,
+service and ingress get created, health-checked, and served over HTTP.
+
+## Try the GitHub integration (Phase 4)
+
+No real GitHub App needed — `scripts/simulate_webhook.py` posts
+correctly HMAC-signed `pull_request` payloads straight at the real
+webhook endpoint (the handler code is identical to what a real
+`github.com` delivery would hit):
+
+```bash
+# Register an application with github_repo set first, then:
+python scripts/simulate_webhook.py opened --repo acme/sample-backend --pr 42
+python scripts/simulate_webhook.py synchronize --repo acme/sample-backend --pr 42
+python scripts/simulate_webhook.py closed --repo acme/sample-backend --pr 42
+```
+
+Set `GITHUB_API_TOKEN` in `.env` against a real repo to have EnvForge
+actually post commit statuses and PR comments — without it, those calls
+are logged no-ops rather than fabricated successes.
 
 ## Repository layout
 

@@ -51,8 +51,18 @@ _VALID_TRANSITIONS: dict[EnvironmentState, set[EnvironmentState]] = {
         EnvironmentState.FAILED,
         EnvironmentState.DELETING,
     },
-    EnvironmentState.READY: {EnvironmentState.DELETING, EnvironmentState.EXPIRED},
-    EnvironmentState.FAILED: {EnvironmentState.QUEUED, EnvironmentState.DELETING},
+    EnvironmentState.READY: {
+        EnvironmentState.DELETING,
+        EnvironmentState.EXPIRED,
+        # A new commit pushed to the PR redeploys in place — see
+        # app.services.environments.redeploy_for_new_commit (Phase 4).
+        EnvironmentState.PROVISIONING,
+    },
+    EnvironmentState.FAILED: {
+        EnvironmentState.QUEUED,
+        EnvironmentState.DELETING,
+        EnvironmentState.PROVISIONING,
+    },
     EnvironmentState.DELETING: {EnvironmentState.DELETED, EnvironmentState.FAILED},
     EnvironmentState.DELETED: set(),
     EnvironmentState.EXPIRED: {EnvironmentState.DELETING},

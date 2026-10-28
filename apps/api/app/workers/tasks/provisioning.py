@@ -9,9 +9,11 @@ import asyncio
 from datetime import UTC, datetime
 
 from app.core.logging import get_logger
+from app.models.application import Application
 from app.models.enums import EnvironmentState, EventTrigger, JobStatus
+from app.models.environment import Environment
 from app.models.job import Job
-from app.services import lifecycle, provisioning
+from app.services import github_client, lifecycle, provisioning
 from app.services.applications import get_application
 from app.services.environments import get_environment
 from app.services.teams import get_team
@@ -37,6 +39,40 @@ async def _mark_job_failed(db, job: Job, message: str) -> None:
     job.finished_at = datetime.now(UTC)
     db.add(job)
     await db.commit()
+
+
+async def _report_github_status(
+    environment: Environment,
+    application: Application,
+    *,
+    state: str,
+    description: str,
+    target_url: str | None = None,
+    comment_on_success: bool = False,
+) -> None:
+    """No-ops quietly for manually-created (non-PR) environments or
+    applications with no linked repo — see app.services.github_client for
+    why an absent GITHUB_API_TOKEN also makes this a safe no-op."""
+    if (
+        environment.pr_number is None
+        or not application.github_repo
+        or not environment.pr_commit_sha
+    ):
+        return
+
+    await github_client.post_commit_status(
+        application.github_repo,
+        environment.pr_commit_sha,
+        state=state,
+        description=description,
+        target_url=target_url,
+    )
+    if comment_on_success and target_url:
+        await github_client.post_pr_comment(
+            application.github_repo,
+            environment.pr_number,
+            f"🚀 EnvForge preview environment is ready: {target_url}",
+        )
 
 
 async def _provision_environment(job_id: str) -> None:
@@ -113,6 +149,7 @@ async def _provision_environment(job_id: str) -> None:
                     "Pods did not reach Ready within the health-check timeout"
                 )
 
+            is_first_time_ready = environment.namespace is None
             environment.namespace = namespace
             environment.preview_url = outputs.get("preview_url")
             db.add(environment)
@@ -131,6 +168,15 @@ async def _provision_environment(job_id: str) -> None:
             await db.commit()
             logger.info("provision.succeeded", environment_id=environment.id, namespace=namespace)
 
+            await _report_github_status(
+                environment,
+                application,
+                state="success",
+                description="EnvForge preview environment is ready",
+                target_url=environment.preview_url,
+                comment_on_success=is_first_time_ready,
+            )
+
         except Exception as exc:
             logger.error(
                 "provision.failed", job_id=job_id, environment_id=environment.id, error=str(exc)
@@ -144,6 +190,12 @@ async def _provision_environment(job_id: str) -> None:
                 error_message=str(exc),
             )
             await _mark_job_failed(db, job, str(exc))
+            await _report_github_status(
+                environment,
+                application,
+                state="failure",
+                description="EnvForge preview environment provisioning failed",
+            )
 
 
 async def _destroy_environment(job_id: str) -> None:

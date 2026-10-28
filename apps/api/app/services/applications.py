@@ -19,6 +19,17 @@ async def get_application_by_slug(db: AsyncSession, slug: str) -> Application | 
     return result.scalar_one_or_none()
 
 
+async def get_application_by_github_repo(
+    db: AsyncSession, repo_full_name: str
+) -> Application | None:
+    result = await db.execute(
+        select(Application).where(
+            Application.github_repo == repo_full_name, Application.is_active.is_(True)
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def create_application(db: AsyncSession, **fields: Any) -> Application:
     if await get_application_by_slug(db, fields["slug"]) is not None:
         raise ApplicationError(f"An application with slug '{fields['slug']}' already exists")
