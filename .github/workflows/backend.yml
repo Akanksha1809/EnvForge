@@ -45,7 +45,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:
-          version: "0.5.x"
+          version: "0.12.x"
 
       - name: Set up Python
         run: uv python install 3.12
@@ -95,7 +95,7 @@ jobs:
           push: false
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: "envforge-${{ matrix.target }}:${{ github.sha }}"
           format: "table"
