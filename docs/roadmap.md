@@ -14,7 +14,7 @@ phase lands.
 | 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | ✅ Done |
 | 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | ✅ Done |
 | 8 | Advanced features: cost estimation engine, template versioning UX, environment cloning, optimization recommendations, AWS Terraform (written, not executed) | ✅ Done |
-| 9 | Production-style validation: full test pyramid incl. e2e + failure injection, Terraform/Helm validation in CI, `scripts/demo.sh`, final docs pass | Planned |
+| 9 | Production-style validation: full test pyramid incl. e2e + failure injection, Terraform validation in CI, `scripts/demo.sh`, final docs pass | ✅ Done |
 
 ## Phase 2 notes
 
@@ -301,6 +301,70 @@ phase lands.
   `infrastructure/terraform/modules/aws-platform/README.md` and
   `docs/cloud-deployment.md` (cost estimate, prerequisites, teardown
   procedure) for the rest.
+
+## Phase 9 notes
+
+- **Failure-injection tests**
+  (`apps/api/tests/unit/test_provisioning_task_failures.py`) exercise the
+  real Celery task coroutines (`_provision_environment`,
+  `_destroy_environment`) against a real in-memory DB and the real
+  lifecycle state machine, with only the Terraform/kubectl calls mocked.
+  They assert the specific failure contract the spec requires: a
+  Terraform apply failure or a health-check timeout lands the environment
+  in `FAILED` with the real error message preserved (never silently
+  stuck or falsely `READY`), and a failed teardown leaves the environment
+  in `DELETING` rather than lying about `DELETED` — the exact behavior
+  `app/workers/tasks/provisioning.py`'s comments already promised, now
+  locked in by a test.
+- **A full-platform e2e test**
+  (`apps/api/tests/e2e/test_full_platform_flow.py`) is the one place that
+  drives a single environment through every subsystem in the order a
+  real user would — register, team, template, application, environment
+  create, real provisioning pipeline to `READY` (Terraform/kubectl
+  mocked, state machine real), cost, dashboard summary, cost summary,
+  recommendations, extend, clone, teardown, and the audit trail — rather
+  than each subsystem only ever being tested in isolation.
+- **`scripts/demo.sh`** runs the same kind of flow against the actually
+  running Docker Compose stack, with nothing mocked except GitHub's
+  delivery transport (called out explicitly in its own output). Running
+  it live surfaced two real, fixed issues before it's considered done:
+  (1) it assumed `register_sample_backend.py` always sets the sample
+  app's `github_repo`, which is only true on first creation — a stack
+  with a pre-existing app from earlier manual testing had it `null`,
+  making the webhook step silently say "ignored"; fixed by having the
+  script read the app's actual `github_repo` and `PATCH` it in if unset,
+  rather than assuming. (2) On this project's shared, contended sandbox,
+  a `terraform apply` genuinely failed once with a live TLS handshake
+  timeout against the `kind` API server and a connection-refused from
+  the `ingress-nginx` admission webhook — the `kind` control plane itself
+  starved of CPU by other concurrent processes on the host, not a code
+  bug. The environment correctly landed in `FAILED` with that real error
+  preserved. `scripts/demo.sh` now explains this directly in its own
+  output instead of only pointing at "the cluster isn't up yet," and a
+  rerun on a quieter host reached `READY` end to end, including a real
+  HTTP response from the preview URL.
+- **Terraform validation in CI**: the existing `fmt`/`init`/`validate`
+  matrix (`.github/workflows/infrastructure.yml`) now covers all six
+  Terraform roots, including the two added in Phase 8
+  (`modules/aws-platform`, `environments/aws`). There is no Helm
+  validation job — Phase 9 removed the placeholder one along with the
+  empty `infrastructure/helm/` directory it was guarding, since this
+  project never adopted Helm (`ingress-nginx` installs from a plain
+  `kubectl apply` manifest, and every other Kubernetes object goes
+  through the Terraform modules instead) and keeping a job that only
+  ever prints "no charts yet" is exactly the kind of placeholder the
+  spec asks not to leave lying around.
+- **Final docs/repo cleanup**: removed two more empty, never-populated
+  scaffold directories found during this pass — a top-level `templates/`
+  (environment templates are real, versioned, and live entirely in the
+  database via `POST /templates`; there was never a file to put there)
+  and `sample-apps/fullstack`/`sample-apps/microservices` (only the
+  backend sample app was ever built — now called out explicitly as a
+  **Future enhancement** in the README instead of implied by an empty
+  directory). Also corrected the README's repository-layout listing and
+  several other places that had drifted into claiming either more or
+  less than was actually true — see the README's own **Limitations**
+  section for the current, honest list.
 
 ## Known, deliberate simplifications
 

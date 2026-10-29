@@ -130,17 +130,29 @@ are logged no-ops rather than fabricated successes.
 ## Repository layout
 
 ```
-apps/api/            FastAPI app, Celery worker, Alembic migrations, tests
-apps/frontend/        React + TypeScript + Vite + Tailwind developer portal
-infrastructure/       Terraform modules, kind/k8s config, Helm charts
-templates/            Versioned environment template definitions
-sample-apps/          The 3 demo applications EnvForge provisions
+apps/api/             FastAPI app, Celery worker, Alembic migrations,
+                       tests (unit/, integration/, e2e/)
+apps/frontend/         React + TypeScript + Vite + Tailwind developer portal
+infrastructure/        Terraform modules (local kind + AWS), kind/k8s config
+sample-apps/backend/   The one demo application EnvForge actually provisions
 observability/        Prometheus config, Grafana dashboards/alerts
-tests/e2e, tests/performance
-scripts/               demo.sh, webhook simulator, seed data
-docs/                 Architecture, ADRs, diagrams, guides
-.github/workflows/    CI
+scripts/                demo.sh, webhook simulator, sample-app registration
+docs/                  Architecture, ADRs, diagrams, guides
+.github/workflows/     CI
 ```
+
+Two things the original scaffold planned but this build never populated,
+removed rather than left as empty placeholders: a top-level `templates/`
+directory (environment templates are real, versioned, and live entirely
+in the database via the `POST /templates` API — never files on disk, so
+there was nothing to put there), and `sample-apps/fullstack|microservices`
+(only the backend sample app was ever built; see **Future enhancements**
+below).
+
+No Helm charts: `ingress-nginx` is installed with its own plain `kubectl
+apply` manifest (see `make kind-ingress`), and every other Kubernetes
+object EnvForge creates goes through the Terraform modules above instead
+— there was never a second packaging layer to add on top of that.
 
 ## Local vs. cloud
 
@@ -151,3 +163,74 @@ validate`-clean, and plan-checked, but intentionally **never applied**
 here — a deliberate project policy against creating real, billable cloud
 infrastructure, not a limitation of missing credentials. See
 [`docs/cloud-deployment.md`](docs/cloud-deployment.md).
+
+## Demo
+
+```bash
+make kind-up && make kind-ingress && make build-sample-backend && make dev
+make demo
+```
+
+`scripts/demo.sh` walks the full platform end to end against the real,
+running stack: registers a sample application, provisions a real preview
+environment (real `terraform apply`, real `kubectl` health check against
+`kind`), checks its cost estimate, queries the platform-wide cost summary
+and optimization recommendations, clones it, exercises a full GitHub PR
+open/sync/close lifecycle through the real webhook handler (correctly
+HMAC-signed payloads standing in for GitHub's own delivery, since this
+sandbox has no public URL for github.com to call), then tears down what it
+created. Every step calls the real API; nothing is mocked except noted.
+On a heavily loaded host, step 4 (waiting for `READY`) can occasionally
+see a `FAILED` environment instead, with a real Terraform error about the
+`kind` control plane timing out under CPU contention — that's the
+lifecycle's failure handling working correctly under real infrastructure
+stress, not a code bug; rerunning `make demo` on a quieter host reaches
+`READY`.
+
+## Testing
+
+```bash
+make test-backend   # pytest: unit + integration + e2e (requires_kind-marked tests excluded by default)
+make test-frontend  # vitest
+```
+
+The backend suite includes dedicated failure-injection tests
+(`tests/unit/test_provisioning_task_failures.py` — Terraform apply
+failures, health-check timeouts, and failed teardowns, asserting the
+environment lands in the correct state rather than a falsely successful
+one) and a full-platform `tests/e2e/test_full_platform_flow.py` that
+drives one environment through registration, real provisioning (mocked
+Terraform/kubectl calls, real state machine), cost, recommendations,
+extension, cloning, and teardown in a single run. `pytest -m
+requires_kind` additionally runs `tests/integration/test_provisioning_live.py`
+against a real local `kind` cluster when one is available (excluded from
+the default run and from CI, which has none).
+
+## Limitations
+
+- **AWS Terraform is written and validated, never applied** — see
+  [`docs/cloud-deployment.md`](docs/cloud-deployment.md).
+- **GitHub integration's transport is simulated locally**
+  (`scripts/simulate_webhook.py`); the webhook handler itself (signature
+  verification, idempotency, PR state handling) is the real code path.
+- **Cost figures are `estimated`/`simulated`**, never real cloud billing.
+- **No Helm charts** — `ingress-nginx` installs from a plain manifest, and
+  every other Kubernetes object goes through the Terraform modules instead.
+- **Single-region, single-cluster local target** — no multi-region or
+  multi-cluster support, matching a single local `kind` cluster's scope.
+- See [`docs/roadmap.md`](docs/roadmap.md)'s "Known, deliberate
+  simplifications" section for the complete, maintained list.
+
+## Future enhancements
+
+- Finish wiring GitHub OAuth as a first-class login option in the portal
+  (the backend path exists; the frontend only has local email/password).
+- Team-scoped role management over the API (currently platform roles are
+  set at registration; per-team role changes aren't yet exposed).
+- Apply the AWS Terraform module against a real account, then point
+  `app/services/provisioning.py` at it instead of `kind` — see
+  `docs/cloud-deployment.md`'s prerequisites section for what that needs.
+- A second sample app exercising a `fullstack` or `microservices`
+  `EnvironmentTemplate` (only `basic_backend`, via the one backend sample
+  app, was ever built) to prove out multi-service dependency provisioning
+  beyond the single-app + Postgres + Redis shape this build demonstrates.

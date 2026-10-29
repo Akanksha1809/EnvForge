@@ -41,19 +41,8 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: terraform validate
 
-  helm-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
-        with:
-          version: "v3.16.2"
-      - name: Lint charts (if any exist yet)
-        run: |
-          if [ -d infrastructure/helm ] && [ -n "$(find infrastructure/helm -maxdepth 1 -mindepth 1 -type d 2>/dev/null)" ]; then
-            for chart in infrastructure/helm/*/; do
-              helm lint "$chart"
-            done
-          else
-            echo "No Helm charts yet — skipping."
-          fi
+# No Helm job: this project never adopted Helm. `ingress-nginx` installs
+# from its own plain kubectl manifest (see `make kind-ingress`), and every
+# other Kubernetes object EnvForge creates goes through the Terraform
+# modules above — there was never a chart to lint, so no placeholder job
+# is kept around pretending otherwise.
