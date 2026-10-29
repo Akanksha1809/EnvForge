@@ -41,6 +41,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: apps/frontend
+          # Explicit, so a future stage reorder in the Dockerfile can't
+          # silently change which image this scans without it showing up
+          # as a diff here too.
+          target: production
           tags: envforge-frontend:${{ github.sha }}
           load: true
           push: false

@@ -109,6 +109,12 @@ services:
   frontend:
     build:
       context: ./apps/frontend
+      # The dev stage (full node_modules + Vite's hot-reload dev server)
+      # — not the default `production` target, which is a slim nginx
+      # image with no dev tooling, built for CI's container-scan and for
+      # an actual deployment, neither of which want a bind-mounted
+      # hot-reload server.
+      target: dev
     environment:
       VITE_API_BASE_URL: http://localhost:${API_HOST_PORT:-8010}
     ports:
