@@ -26,3 +26,4 @@ apps/frontend/.vite/
 *.log
 /tmp/
 .claude/scheduled_tasks.lock
+celerybeat-schedule

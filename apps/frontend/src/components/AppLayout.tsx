@@ -1,9 +1,11 @@
 import {
   Boxes,
+  FileStack,
   LayoutDashboard,
   LogOut,
   ScrollText,
   Settings,
+  ShieldCheck,
   Users as UsersIcon,
 } from "lucide-react"
 import { NavLink, Outlet } from "react-router-dom"
@@ -15,7 +17,9 @@ const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/applications", label: "Applications", icon: Boxes },
   { to: "/environments", label: "Environments", icon: ScrollText },
+  { to: "/templates", label: "Templates", icon: FileStack },
   { to: "/teams", label: "Teams", icon: UsersIcon },
+  { to: "/audit", label: "Audit", icon: ShieldCheck },
   { to: "/settings", label: "Settings", icon: Settings },
 ]
 
