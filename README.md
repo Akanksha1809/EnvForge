@@ -9,7 +9,7 @@ This is a from-scratch, phase-by-phase build. See
 [`docs/roadmap.md`](docs/roadmap.md) for what's implemented vs. planned, and
 [`docs/architecture.md`](docs/architecture.md) for the system design.
 
-## Status: Phases 1–5 done ✅ (of 9)
+## Status: Phases 1–6 done ✅ (of 9)
 
 What works today, for real (no mocks):
 
@@ -36,17 +36,20 @@ What works today, for real (no mocks):
   independent schedules; quotas enforced per user/application/team;
   `POST /jobs/{id}/retry` actually re-dispatches the failed task;
   `POST /environments/{id}/expire` is the manual cleanup control.
-- **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 developer
-  portal shell — login/register, protected routing, a dashboard shell
-  authenticated against the live API (the full dashboard lands in Phase 6).
+- **Developer portal**: React 19 + TypeScript + Vite + Tailwind CSS v4 —
+  a real dashboard (live aggregate counts + recharts charts + recent
+  jobs, from `GET /dashboard/summary`), Application/Environment/Template/
+  Team catalogs, an environment detail page with its full lifecycle
+  event timeline and logs, and a platform-admin audit history view.
+  Every page reads real data; there is no mock data in the portal.
 - **Infra**: Docker Compose stack (Postgres, Redis, API, worker, beat,
   frontend, Prometheus, Grafana) plus a real local `kind` cluster with
   `ingress-nginx`.
 - **CI**: GitHub Actions for backend, frontend, and Terraform (fmt/validate
   across all four modules).
 
-Everything else (environment TTL/cleanup/quotas, the full dashboard,
-observability, cost engine, cloud Terraform, e2e tests) is being built
+Everything else (observability/Grafana dashboards, the cost engine,
+cloud Terraform, e2e tests, the final demo script) is being built
 incrementally — see [`docs/roadmap.md`](docs/roadmap.md) for the full
 phase-by-phase status and every bug found/fixed along the way.
 

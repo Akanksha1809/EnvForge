@@ -11,7 +11,7 @@ phase lands.
 | 3 | Provisioning: real Terraform modules + `kind` cluster, Celery provisioning pipeline, sample app A, end-to-end deploy to a live local cluster | ✅ Done |
 | 4 | GitHub integration: webhooks, signature verification, PR open/sync/close handling, commit statuses, preview URLs, webhook simulator | ✅ Done |
 | 5 | Environment management: TTL expiration, cleanup/GC engine, resource quotas, retry/recovery, extend/refresh | ✅ Done |
-| 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | Planned |
+| 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | ✅ Done |
 | 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | Planned |
 | 8 | Advanced features: cost estimation engine, template versioning UX, environment cloning, optimization recommendations, AWS Terraform (written, not executed) | Planned |
 | 9 | Production-style validation: full test pyramid incl. e2e + failure injection, Terraform/Helm validation in CI, `scripts/demo.sh`, final docs pass | Planned |
@@ -173,6 +173,37 @@ phase lands.
 - `POST /environments/{id}/expire` is the manual cleanup control the spec
   asks for: force an environment through the same expire-then-delete path
   the TTL sweep uses, on demand, without waiting for the schedule.
+
+## Phase 6 notes
+
+- Two small backend additions landed alongside the frontend because the
+  portal genuinely needed them: `GET /dashboard/summary` (real aggregate
+  SQL — counts by state, by application, by team, provisioning success
+  rate and average duration from real Job rows — no cost figures, that's
+  explicitly Phase 8's job) and `GET /audit-logs` (paginated, platform-
+  admin only) so the audit trail every service already wrote via
+  `app.services.audit.record()` was actually readable from somewhere.
+- Every page fetches real data via React Query against the live API —
+  there is no mock data anywhere in the portal, including the empty
+  states (e.g. "Cost engine lands in a later phase" rather than a
+  fabricated dollar figure).
+- Caught and fixed three real UI bugs while reviewing in the browser
+  against the live stack (not just the automated test suite): a `Button`
+  whose text wrapped onto two lines inside its own fixed height instead
+  of staying on one line (`whitespace-nowrap`); page headers using
+  `flex items-center justify-between` that overflowed off-screen on
+  narrower viewports instead of wrapping (`flex-wrap gap-4`); and data
+  tables using `overflow-hidden` on their container, which clips wide
+  content instead of letting it scroll (`overflow-x-auto`). All three
+  were verified fixed by re-screenshotting in the browser, not assumed.
+- No dedicated Jobs page yet — the Jobs API (list/get/retry) is wired up
+  in `api/jobs.ts` and used on the dashboard's "recent jobs" table, but a
+  full jobs catalog view with retry buttons is a reasonable follow-up,
+  not something this phase claims to have shipped.
+- Team membership shows raw user IDs rather than names/emails — the
+  `TeamMembership` schema only returns `user_id`, not a joined user
+  record. A `GET /teams/{id}/members` enrichment (or a `/users` lookup
+  endpoint) is a natural follow-up, not done here.
 
 ## Known, deliberate simplifications
 
