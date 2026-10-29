@@ -26,7 +26,14 @@ COPY . .
 EXPOSE 5173
 CMD ["npm", "run", "dev", "--", "--host"]
 
-FROM nginx:1.27-alpine AS production
+FROM nginx:1.29-alpine AS production
+# The published nginx:alpine tag is only as fresh as whenever it was last
+# built — Alpine's own package repo keeps shipping patched `apk` packages
+# in between those builds. Pulling the latest ones at build time (rather
+# than only whatever shipped with the base image) is the standard way to
+# avoid shipping known-fixed CVEs that the base image just hasn't caught
+# up to yet.
+RUN apk update && apk upgrade --no-cache
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
