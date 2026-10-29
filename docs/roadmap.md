@@ -12,7 +12,7 @@ phase lands.
 | 4 | GitHub integration: webhooks, signature verification, PR open/sync/close handling, commit statuses, preview URLs, webhook simulator | ✅ Done |
 | 5 | Environment management: TTL expiration, cleanup/GC engine, resource quotas, retry/recovery, extend/refresh | ✅ Done |
 | 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | ✅ Done |
-| 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | Planned |
+| 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | ✅ Done |
 | 8 | Advanced features: cost estimation engine, template versioning UX, environment cloning, optimization recommendations, AWS Terraform (written, not executed) | Planned |
 | 9 | Production-style validation: full test pyramid incl. e2e + failure injection, Terraform/Helm validation in CI, `scripts/demo.sh`, final docs pass | Planned |
 
@@ -204,6 +204,51 @@ phase lands.
   `TeamMembership` schema only returns `user_id`, not a joined user
   record. A `GET /teams/{id}/members` enrichment (or a `/users` lookup
   endpoint) is a natural follow-up, not done here.
+
+## Phase 7 notes
+
+- **Prometheus metrics are computed from live DB state at scrape time**
+  (`app/services/metrics.py`), not from in-process counters incremented
+  by the worker — Prometheus can't scrape the worker process directly
+  without a second exporter or multiprocess-mode coordination, and
+  querying the same `environments`/`jobs` tables the REST API already
+  reads is simpler and can't drift from reality. Verified live: the
+  Grafana dashboard's "Active environments" stat matched
+  `GET /dashboard/summary`'s `active_environments` exactly.
+- **Grafana dashboard and Prometheus alert rules are real, checked-in
+  config**, not a bare `docker-compose up` with nothing behind it —
+  `observability/grafana/dashboards/envforge-platform.json` (9 panels:
+  stats, a gauge, two timeseries) and
+  `observability/prometheus/alerts/envforge-alerts.yml` (5 alert rules
+  covering failure rate, queue backlog, stuck provisioning, and HTTP
+  5xx). Verified by loading the dashboard in a browser against the live
+  stack and confirming Prometheus reports every rule as `health: ok`
+  via its own `/api/v1/rules` endpoint.
+- **OpenTelemetry tracing** is wired into both the API
+  (`FastAPIInstrumentor`) and the Celery worker (`CeleryInstrumentor`),
+  exporting to a real OTLP collector when `OTEL_EXPORTER_OTLP_ENDPOINT`
+  is configured, or to the console otherwise — consistent with this
+  project's rule that an absent external dependency makes an integration
+  a visible no-op, never silently nothing. Caught and fixed a real
+  ordering bug while wiring this up: the worker's tracer setup lived at
+  module level in `celery_app.py`, which the API process also imports
+  (for `task_dispatch.enqueue`) — whichever process imported it first
+  would win the race to set the global tracer provider's service name,
+  mislabeling the other process's spans. Fixed by moving worker-only
+  setup behind Celery's `worker_process_init` signal, which only fires
+  inside an actual `celery worker` process.
+- **Container image scanning** (Trivy, `CRITICAL,HIGH`, unfixed CVEs
+  ignored) runs in CI against the real built `api`, `worker`, and
+  `frontend` images — immutable `${{ github.sha }}` tags, never `latest`
+  as the only reference.
+- **RBAC test depth**: `tests/unit/test_rbac_matrix.py` locks in the
+  full permission matrix per role (so a change to one role's permissions
+  can't silently drift another's without a test failing), and
+  `tests/integration/test_rbac_depth.py` exercises the same matrix
+  through the real API — including the case that actually matters most:
+  a user with a permission *globally* (e.g. `developer` has
+  `ENVIRONMENT_CREATE`) is still blocked if they aren't a member of the
+  team that owns the resource.
 
 ## Known, deliberate simplifications
 

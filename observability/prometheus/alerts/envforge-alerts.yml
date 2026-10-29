@@ -1,0 +1,66 @@
+groups:
+  - name: envforge-platform
+    rules:
+      - alert: EnvForgeHighProvisioningFailureRate
+        expr: envforge_provisioning_success_rate < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EnvForge provisioning success rate is below 50%"
+          description: >-
+            Fewer than half of completed provisioning jobs are succeeding.
+            Check recent Job rows via GET /api/v1/jobs?status=failed and
+            the worker logs for the root cause (common causes: kind
+            cluster control-plane instability, a bad Application
+            deployment_config, or the kubeconfig/host.docker.internal
+            path breaking — see docs/roadmap.md Phase 3 notes).
+
+      - alert: EnvForgeJobQueueBacklog
+        expr: envforge_jobs_queued > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EnvForge has a growing job queue backlog"
+          description: >-
+            More than 20 jobs are pending/queued/running at once — the
+            worker may be undersized, stuck, or down. Check `docker ps`
+            / `docker logs envforge-worker-1` and consider scaling worker
+            concurrency (CELERY_CONCURRENCY) or replica count.
+
+      - alert: EnvForgeFailedJobsAccumulating
+        expr: envforge_jobs_failed > 5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Failed jobs are accumulating without being retried"
+          description: >-
+            More than 5 jobs are sitting in FAILED state. Either retry
+            them (POST /api/v1/jobs/{id}/retry) or investigate why
+            they're failing — this threshold existing at all, sustained,
+            usually means a systemic issue rather than one-off failures.
+
+      - alert: EnvForgeNoSuccessfulProvisioningRecently
+        expr: envforge_environments_provisioning > 0 and envforge_provisioning_duration_avg_seconds == 0
+        for: 20m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Environments are stuck provisioning with no recent successes"
+          description: >-
+            Environments have been in an in-flight provisioning state for
+            20+ minutes with no successful completions recorded. The
+            provisioning pipeline (Terraform/kind/worker) is likely down
+            or stuck — check the kind cluster's control-plane health
+            (kubectl get pods -n kube-system) and worker logs first.
+
+      - alert: EnvForgeHighHttpErrorRate
+        expr: sum(rate(envforge_http_requests_total{status_code=~"5.."}[5m])) > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "EnvForge API is returning 5xx errors"
+          description: "Sustained 5xx error rate on the API — check envforge-api-1 logs."

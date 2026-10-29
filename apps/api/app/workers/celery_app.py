@@ -3,6 +3,7 @@ the API process. Task modules are registered in `include=` below as each
 subsystem lands (provisioning in Phase 3, cleanup/github in Phases 4-5)."""
 
 from celery import Celery
+from celery.signals import worker_process_init
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -52,3 +53,18 @@ celery_app.conf.beat_schedule = {
 @celery_app.task(name="envforge.health_check")
 def health_check() -> str:
     return "ok"
+
+
+@worker_process_init.connect
+def _init_worker_tracing(**_kwargs: object) -> None:
+    """Only runs inside an actual `celery worker` process, never when this
+    module is merely imported by the API process (e.g. via
+    app.services.task_dispatch) — otherwise the API would mislabel its own
+    traces as `envforge-worker` by racing to configure the global tracer
+    provider first."""
+    from opentelemetry.instrumentation.celery import CeleryInstrumentor
+
+    from app.core.tracing import configure_tracing
+
+    configure_tracing("envforge-worker")
+    CeleryInstrumentor().instrument()

@@ -74,3 +74,34 @@ jobs:
           CELERY_BROKER_URL: redis://localhost:6379/1
           CELERY_RESULT_BACKEND: redis://localhost:6379/2
         run: pytest tests/ --cov=app --cov-report=term-missing
+
+  container-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [api, worker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ${{ matrix.target }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          file: apps/api/Dockerfile${{ matrix.target == 'worker' && '.worker' || '' }}
+          # Immutable, content-addressed tag — never `latest` as the only
+          # reference, per the spec's CI/CD requirements.
+          tags: envforge-${{ matrix.target }}:${{ github.sha }}
+          load: true
+          push: false
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: "envforge-${{ matrix.target }}:${{ github.sha }}"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          # Known base-image CVEs with no available fix yet shouldn't block
+          # every PR; real exploitable findings in app layers still fail
+          # the build.
+          ignore-unfixed: true

@@ -5,19 +5,25 @@ import uuid
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.tracing import configure_tracing
+from app.db.session import get_db
+from app.services import metrics as metrics_service
 
 settings = get_settings()
 configure_logging("envforge-api")
 logger = get_logger("envforge-api")
+configure_tracing("envforge-api")
 
 REQUEST_COUNT = Counter(
     "envforge_http_requests_total",
@@ -55,6 +61,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+FastAPIInstrumentor.instrument_app(app)
 
 
 @app.middleware("http")
@@ -96,7 +104,8 @@ async def health() -> dict:
 
 
 @app.get("/metrics", tags=["system"])
-async def metrics() -> Response:
+async def metrics(db: AsyncSession = Depends(get_db)) -> Response:
+    await metrics_service.refresh_gauges(db)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

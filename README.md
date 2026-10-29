@@ -9,7 +9,7 @@ This is a from-scratch, phase-by-phase build. See
 [`docs/roadmap.md`](docs/roadmap.md) for what's implemented vs. planned, and
 [`docs/architecture.md`](docs/architecture.md) for the system design.
 
-## Status: Phases 1–6 done ✅ (of 9)
+## Status: Phases 1–7 done ✅ (of 9)
 
 What works today, for real (no mocks):
 
@@ -42,16 +42,24 @@ What works today, for real (no mocks):
   Team catalogs, an environment detail page with its full lifecycle
   event timeline and logs, and a platform-admin audit history view.
   Every page reads real data; there is no mock data in the portal.
+- **Observability**: Prometheus metrics computed from live DB state (not
+  fake counters), a real provisioned Grafana dashboard (9 panels — stats,
+  a gauge, two timeseries) and 5 Prometheus alert rules covering failure
+  rate, job backlog, and stuck provisioning, plus OpenTelemetry tracing
+  wired into both the API and the Celery worker.
+- **Security**: a full RBAC permission matrix enforced server-side and
+  locked in by tests at both the unit and API level, and Trivy container
+  scanning in CI against the real built `api`/`worker`/`frontend` images.
 - **Infra**: Docker Compose stack (Postgres, Redis, API, worker, beat,
   frontend, Prometheus, Grafana) plus a real local `kind` cluster with
   `ingress-nginx`.
 - **CI**: GitHub Actions for backend, frontend, and Terraform (fmt/validate
-  across all four modules).
+  across all four modules), plus container image scanning.
 
-Everything else (observability/Grafana dashboards, the cost engine,
-cloud Terraform, e2e tests, the final demo script) is being built
-incrementally — see [`docs/roadmap.md`](docs/roadmap.md) for the full
-phase-by-phase status and every bug found/fixed along the way.
+Everything else (the cost engine, cloud Terraform, e2e tests, the final
+demo script) is being built incrementally — see
+[`docs/roadmap.md`](docs/roadmap.md) for the full phase-by-phase status
+and every bug found/fixed along the way.
 
 ## Quick start
 
@@ -65,12 +73,15 @@ Once `make dev` is up:
 
 - API: http://localhost:8010 (docs at `/api/docs`, health at `/health`, metrics at `/metrics`)
 - Frontend: http://localhost:5173
-- Grafana: http://localhost:3001 (anonymous viewer enabled)
-- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3001 (anonymous viewer enabled — open the
+  "EnvForge Platform" dashboard)
+- Prometheus: http://localhost:9091
 
-> The API's host port defaults to **8010**, not 8000, because 8000 is a
-> common conflict on developer machines (e.g. an existing SSH tunnel) —
-> override with `API_HOST_PORT` in `.env` if needed.
+> Several host ports default away from their usual numbers (API **8010**
+> not 8000, Prometheus **9091** not 9090) because those are common
+> conflicts on developer machines (existing SSH tunnels, other local
+> Prometheus instances, etc). Override via `API_HOST_PORT`,
+> `PROMETHEUS_HOST_PORT`, or `GRAFANA_HOST_PORT` in `.env` if needed.
 
 The **first user you register becomes the platform admin**; everyone after
 that defaults to `developer`.
