@@ -10,6 +10,7 @@ app/services/task_dispatch.py): if the broker is unreachable the Job row
 simply stays PENDING rather than the request failing.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -214,6 +215,28 @@ async def redeploy_for_new_commit(
         await db.commit()
 
     return environment
+
+
+async def clone_environment(
+    db: AsyncSession,
+    source: Environment,
+    *,
+    application: Application,
+    requested_by_user_id: str | None,
+) -> Environment:
+    """Creates a brand-new environment for the same application, copying
+    the source's config overrides but never its PR linkage — a clone is
+    always a manual environment, even if the one it was cloned from was
+    PR-triggered, so it doesn't get swept up by that PR's close/merge
+    webhook later."""
+    return await create_environment(
+        db,
+        application=application,
+        requested_by_user_id=requested_by_user_id,
+        name=f"{source.name}-clone-{uuid.uuid4().hex[:6]}",
+        config_overrides=dict(source.config_snapshot),
+        trigger=EventTrigger.USER,
+    )
 
 
 async def extend_environment(

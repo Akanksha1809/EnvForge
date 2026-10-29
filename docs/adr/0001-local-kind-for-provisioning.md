@@ -6,8 +6,13 @@ Accepted (Phase 3).
 ## Context
 The spec requires real infrastructure automation — Kubernetes namespaces,
 deployments, services, ingress, network policies — provisioned by
-Terraform, and explicitly forbids faking integrations. This project runs
-in an environment with no AWS account or cloud credentials.
+Terraform, and explicitly forbids faking integrations. This project does
+not assume it has standing access to a real AWS account for the platform
+it's demonstrating, and treats "never run `terraform apply` against a
+cloud account as part of this build" as a hard policy regardless of what
+any given sandbox can technically reach — see `docs/cloud-deployment.md`
+for the one point in Phase 8 where that distinction (policy vs. actual
+credential availability) mattered.
 
 ## Decision
 Target a real local `kind` (Kubernetes-in-Docker) cluster with

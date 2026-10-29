@@ -1,5 +1,11 @@
 import { apiClient } from "@/api/client"
-import type { Environment, EnvironmentEvent, EnvironmentLogLine, Page } from "@/types/platform"
+import type {
+  Environment,
+  EnvironmentCost,
+  EnvironmentEvent,
+  EnvironmentLogLine,
+  Page,
+} from "@/types/platform"
 
 export interface EnvironmentCreatePayload {
   application_id: string
@@ -38,4 +44,10 @@ export const environmentsApi = {
 
   logs: (id: string) =>
     apiClient.get<EnvironmentLogLine[]>(`/environments/${id}/logs`).then((res) => res.data),
+
+  cost: (id: string) =>
+    apiClient.get<EnvironmentCost>(`/environments/${id}/cost`).then((res) => res.data),
+
+  clone: (id: string) =>
+    apiClient.post<Environment>(`/environments/${id}/clone`).then((res) => res.data),
 }

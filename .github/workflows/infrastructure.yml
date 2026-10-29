@@ -20,7 +20,9 @@ jobs:
           - infrastructure/terraform/modules/environment-namespace
           - infrastructure/terraform/modules/environment-app
           - infrastructure/terraform/modules/environment-dependency
+          - infrastructure/terraform/modules/aws-platform
           - infrastructure/terraform/environments/local
+          - infrastructure/terraform/environments/aws
     steps:
       - uses: actions/checkout@v4
 

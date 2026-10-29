@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { AlertTriangle, Boxes, CheckCircle2, Loader2, XCircle } from "lucide-react"
+import { AlertTriangle, Boxes, CheckCircle2, Lightbulb, Loader2, XCircle } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -55,6 +55,18 @@ export function DashboardPage() {
     queryKey: ["dashboard-summary"],
     queryFn: dashboardApi.summary,
     refetchInterval: 15_000,
+  })
+
+  const { data: costSummary } = useQuery({
+    queryKey: ["dashboard-cost-summary"],
+    queryFn: dashboardApi.costSummary,
+    refetchInterval: 30_000,
+  })
+
+  const { data: recommendations } = useQuery({
+    queryKey: ["dashboard-recommendations"],
+    queryFn: dashboardApi.recommendations,
+    refetchInterval: 30_000,
   })
 
   return (
@@ -185,8 +197,22 @@ export function DashboardPage() {
                 <CardTitle>Infrastructure cost</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold text-slate-500">—</p>
-                <p className="mt-1 text-xs text-slate-500">Cost engine lands in a later phase</p>
+                {costSummary ? (
+                  <>
+                    <p className="flex items-baseline gap-2 text-3xl font-semibold text-slate-100">
+                      ${costSummary.total_estimated_cost_usd.toFixed(2)}
+                      <Badge tone={costSummary.basis === "estimated" ? "info" : "neutral"}>
+                        {costSummary.basis}
+                      </Badge>
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Across {costSummary.by_team.length} team(s),{" "}
+                      {costSummary.by_application.length} application(s)
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-3xl font-semibold text-slate-500">—</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -240,6 +266,46 @@ export function DashboardPage() {
               )}
             </CardContent>
           </Card>
+
+          {recommendations && recommendations.length > 0 ? (
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Recommendations</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="flex flex-col gap-3">
+                  {recommendations.map((rec, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm">
+                      <Lightbulb
+                        className={`mt-0.5 size-4 shrink-0 ${
+                          rec.severity === "critical"
+                            ? "text-rose-400"
+                            : rec.severity === "warning"
+                              ? "text-amber-400"
+                              : "text-brand-400"
+                        }`}
+                      />
+                      <div>
+                        <p className="text-slate-300">{rec.message}</p>
+                        <Badge
+                          tone={
+                            rec.severity === "critical"
+                              ? "danger"
+                              : rec.severity === "warning"
+                                ? "warning"
+                                : "info"
+                          }
+                          className="mt-1"
+                        >
+                          {rec.category}
+                        </Badge>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
         </>
       )}
     </div>

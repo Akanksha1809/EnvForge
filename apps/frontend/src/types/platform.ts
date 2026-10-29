@@ -163,3 +163,36 @@ export interface DashboardSummary {
   average_provisioning_duration_seconds: number | null
   recent_jobs: Job[]
 }
+
+export interface CostBucket {
+  name: string
+  slug: string
+  estimated_cost_usd: number
+}
+
+export interface CostSummary {
+  basis: "estimated" | "simulated"
+  total_estimated_cost_usd: number
+  by_team: CostBucket[]
+  by_application: CostBucket[]
+}
+
+export interface EnvironmentCost {
+  environment_id: string
+  basis: "estimated" | "simulated"
+  hours_active: number
+  cpu_cores: number
+  memory_gb: number
+  estimated_cost_usd: number
+  is_still_active: boolean
+}
+
+export type RecommendationSeverity = "info" | "warning" | "critical"
+
+export interface Recommendation {
+  severity: RecommendationSeverity
+  category: string
+  message: string
+  resource_type: string
+  resource_id: string | null
+}

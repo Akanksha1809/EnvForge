@@ -8,7 +8,15 @@ would get a separate `@pytest.mark.postgres` suite run against the compose
 `postgres` service in CI.
 """
 
+import os
 from collections.abc import AsyncGenerator
+
+# Must be set before `app.main` (and its OpenTelemetry setup) is imported
+# by anything below — otherwise the real BatchSpanProcessor background
+# thread starts, and tends to log a harmless but noisy "I/O operation on
+# closed file" error when it tries to flush after pytest has already torn
+# down stdout. OTEL_SDK_DISABLED is the standard OTel env var for this.
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 import pytest
 import pytest_asyncio

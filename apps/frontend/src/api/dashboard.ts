@@ -1,8 +1,14 @@
 import { apiClient } from "@/api/client"
-import type { AuditLog, DashboardSummary, Page } from "@/types/platform"
+import type { AuditLog, CostSummary, DashboardSummary, Page, Recommendation } from "@/types/platform"
 
 export const dashboardApi = {
   summary: () => apiClient.get<DashboardSummary>("/dashboard/summary").then((res) => res.data),
+
+  costSummary: () =>
+    apiClient.get<CostSummary>("/dashboard/cost-summary").then((res) => res.data),
+
+  recommendations: () =>
+    apiClient.get<Recommendation[]>("/dashboard/recommendations").then((res) => res.data),
 }
 
 export const auditApi = {

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { FileStack, Plus } from "lucide-react"
+import { FileStack, History, Plus } from "lucide-react"
 import { useState } from "react"
 
 import { templatesApi } from "@/api/templates"
@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { Input } from "@/components/ui/Input"
 import { Modal } from "@/components/ui/Modal"
 import { Select } from "@/components/ui/Select"
-import type { TemplateType } from "@/types/platform"
+import type { EnvironmentTemplate, TemplateType } from "@/types/platform"
 
 const TEMPLATE_TYPES: TemplateType[] = ["basic_backend", "fullstack", "microservices", "custom"]
 
@@ -94,8 +94,137 @@ function CreateTemplateModal({ open, onClose }: { open: boolean; onClose: () => 
   )
 }
 
+function NewVersionModal({
+  open,
+  onClose,
+  base,
+}: {
+  open: boolean
+  onClose: () => void
+  base: EnvironmentTemplate | null
+}) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState(base?.name ?? "")
+  const [requiredServices, setRequiredServices] = useState(
+    base?.required_services.join(", ") ?? ""
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const close = () => {
+    setError(null)
+    onClose()
+  }
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!base) return
+    setError(null)
+    setIsSubmitting(true)
+    try {
+      await templatesApi.createVersion(base.slug, {
+        slug: base.slug,
+        name,
+        template_type: base.template_type,
+        required_services: requiredServices
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["templates"] })
+      await queryClient.invalidateQueries({ queryKey: ["template-versions", base.slug] })
+      close()
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        "Failed to create version"
+      setError(message)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  if (!base) return null
+
+  return (
+    <Modal open={open} onClose={close} title={`New version of "${base.slug}"`}>
+      <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+        <p className="text-xs text-slate-500">
+          Creates <code>{base.slug}</code> v{base.version + 1}. The current latest version
+          (v{base.version}) is kept, untouched — applications pinned to it are unaffected.
+        </p>
+        <Input label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
+        <Input
+          label="Required services (comma-separated)"
+          value={requiredServices}
+          onChange={(e) => setRequiredServices(e.target.value)}
+        />
+        {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+        <Button type="submit" isLoading={isSubmitting}>
+          Create version
+        </Button>
+      </form>
+    </Modal>
+  )
+}
+
+function VersionHistoryModal({
+  open,
+  onClose,
+  template,
+  onNewVersion,
+}: {
+  open: boolean
+  onClose: () => void
+  template: EnvironmentTemplate | null
+  onNewVersion: () => void
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["template-versions", template?.slug],
+    queryFn: () => templatesApi.versions(template!.slug),
+    enabled: open && !!template,
+  })
+
+  if (!template) return null
+
+  const versions = [...(data ?? [])].sort((a, b) => b.version - a.version)
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Version history: ${template.slug}`}>
+      <div className="flex flex-col gap-3">
+        {isLoading ? (
+          <p className="text-sm text-slate-400">Loading…</p>
+        ) : (
+          versions.map((v) => (
+            <div
+              key={v.id}
+              className="flex items-center justify-between rounded-lg border border-slate-800 px-3 py-2"
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-slate-100">v{v.version}</span>
+                  {v.is_latest ? <Badge tone="success">latest</Badge> : null}
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">{v.name}</p>
+              </div>
+              <span className="text-xs text-slate-500">
+                {new Date(v.created_at).toLocaleDateString()}
+              </span>
+            </div>
+          ))
+        )}
+        <Button className="mt-2" onClick={onNewVersion}>
+          <Plus className="size-4" /> New version
+        </Button>
+      </div>
+    </Modal>
+  )
+}
+
 export function TemplatesPage() {
   const [modalOpen, setModalOpen] = useState(false)
+  const [historyTemplate, setHistoryTemplate] = useState<EnvironmentTemplate | null>(null)
+  const [versionModalOpen, setVersionModalOpen] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ["templates"],
     queryFn: () => templatesApi.list(),
@@ -142,6 +271,13 @@ export function TemplatesPage() {
                     ))}
                   </div>
                 ) : null}
+                <Button
+                  variant="secondary"
+                  className="mt-4 w-full"
+                  onClick={() => setHistoryTemplate(tpl)}
+                >
+                  <History className="size-4" /> Version history
+                </Button>
               </Card>
             ))}
           </div>
@@ -149,6 +285,17 @@ export function TemplatesPage() {
       </div>
 
       <CreateTemplateModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <VersionHistoryModal
+        open={!!historyTemplate}
+        onClose={() => setHistoryTemplate(null)}
+        template={historyTemplate}
+        onNewVersion={() => setVersionModalOpen(true)}
+      />
+      <NewVersionModal
+        open={versionModalOpen}
+        onClose={() => setVersionModalOpen(false)}
+        base={historyTemplate}
+      />
     </div>
   )
 }

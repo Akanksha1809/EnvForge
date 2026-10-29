@@ -13,7 +13,7 @@ phase lands.
 | 5 | Environment management: TTL expiration, cleanup/GC engine, resource quotas, retry/recovery, extend/refresh | ✅ Done |
 | 6 | Developer portal: full dashboard, catalogs, environment detail, templates UI, team management, audit history — wired to real data only | ✅ Done |
 | 7 | Observability & security hardening: OpenTelemetry tracing, Grafana dashboards/alerts, container scanning in CI, RBAC test depth | ✅ Done |
-| 8 | Advanced features: cost estimation engine, template versioning UX, environment cloning, optimization recommendations, AWS Terraform (written, not executed) | Planned |
+| 8 | Advanced features: cost estimation engine, template versioning UX, environment cloning, optimization recommendations, AWS Terraform (written, not executed) | ✅ Done |
 | 9 | Production-style validation: full test pyramid incl. e2e + failure injection, Terraform/Helm validation in CI, `scripts/demo.sh`, final docs pass | Planned |
 
 ## Phase 2 notes
@@ -250,12 +250,65 @@ phase lands.
   `ENVIRONMENT_CREATE`) is still blocked if they aren't a member of the
   team that owns the resource.
 
+## Phase 8 notes
+
+- **Cost estimation** (`app/services/cost_engine.py`) derives CPU/memory
+  from an application's own `resource_requirements` when configured
+  (basis `"estimated"`), or falls back to a documented default shape
+  (basis `"simulated"`) when it isn't — never silently guessing without
+  saying so. `GET /environments/{id}/cost` and `GET
+  /dashboard/cost-summary` (grouped by team and application) are both
+  live-verified against the real Docker stack. **Found and fixed while
+  wiring this up**: the SQLite test database (used by `pytest`, see
+  `tests/conftest.py`) strips `tzinfo` from `DateTime(timezone=True)`
+  columns on round-trip, while Postgres preserves it — `created_at`/
+  `destroyed_at` are normalized to UTC-aware before subtracting, so the
+  same code is correct against both.
+- **Environment cloning** (`POST /environments/{id}/clone`,
+  `app/services/environments.clone_environment`) creates a brand-new
+  environment for the same application from the source's config
+  snapshot, but never copies its PR linkage — a clone is always a
+  manual, `EventTrigger.USER` environment, so cloning a PR preview can't
+  accidentally create a second environment GitHub's webhook handler
+  thinks it owns. Goes through the same `create_environment` path as
+  every other environment, so it's subject to the same quota checks
+  (verified by `test_clone_respects_team_quota`).
+- **Optimization recommendations** (`GET /dashboard/recommendations`,
+  `app/services/recommendations.py`) are each derived from a real query
+  against live platform state — team quota pressure (≥80% of
+  `max_active_environments`), applications missing
+  `resource_requirements` or an `environment_template_id`, environments
+  active for more than 7 days, and jobs that exhausted their retries —
+  never a canned or hardcoded tip. Verified live: a freshly registered
+  user immediately sees real `cost_accuracy`/`consistency`
+  recommendations for this stack's own pre-existing sample applications.
+- **Template versioning UX**: the versioning API itself
+  (`POST`/`GET /templates/{slug}/versions`) existed since Phase 2; Phase
+  8 added the frontend — a "Version history" view per template card
+  (`apps/frontend/src/pages/TemplatesPage.tsx`) listing every version
+  with its `is_latest` badge, and a "New version" form that calls the
+  same endpoint, so creating v2 of a template no longer requires `curl`.
+- **AWS Terraform** (`infrastructure/terraform/modules/aws-platform`):
+  VPC, EKS (one managed node group, OIDC/IRSA for the AWS Load Balancer
+  Controller), RDS Postgres, ElastiCache Redis, three ECR repositories.
+  `terraform init -backend=false && terraform validate` passes against
+  it and the new `environments/aws` root module, and a one-off
+  `terraform plan` (never `apply`) confirmed the plan itself resolves
+  cleanly end-to-end. `apply` was never attempted and never will be as
+  part of this project — a deliberate policy against creating real,
+  billable cloud infrastructure with no one asking for it, not merely a
+  side effect of missing credentials. See
+  `infrastructure/terraform/modules/aws-platform/README.md` and
+  `docs/cloud-deployment.md` (cost estimate, prerequisites, teardown
+  procedure) for the rest.
+
 ## Known, deliberate simplifications
 
 - **Kubernetes target is local `kind`, not AWS EKS.** Provisioning is real
   (real `terraform apply`, real namespaces/pods), just against a local
-  cluster. AWS Terraform modules exist for the cloud path but are never
-  executed in this environment (no AWS credentials).
+  cluster. AWS Terraform modules exist for the cloud path, validated and
+  plan-checked, but `apply` is never run against them in this project —
+  a deliberate policy, not a constraint of missing credentials.
 - **GitHub webhooks are triggered by a local simulator script**, since this
   sandbox has no public URL for github.com to call. The webhook handler
   itself — signature verification, idempotency, PR state handling — is the

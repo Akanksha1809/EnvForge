@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeft, Clock, ExternalLink, Trash2 } from "lucide-react"
+import { ArrowLeft, Clock, Copy, ExternalLink, Trash2 } from "lucide-react"
 import { useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 
@@ -37,17 +37,26 @@ export function EnvironmentDetailPage() {
     refetchInterval: 5_000,
   })
 
-  const runAction = async (action: string, fn: () => Promise<unknown>) => {
+  const { data: cost } = useQuery({
+    queryKey: ["environments", environmentId, "cost"],
+    queryFn: () => environmentsApi.cost(environmentId),
+    enabled: !!environmentId,
+    refetchInterval: 15_000,
+  })
+
+  const runAction = async <T,>(action: string, fn: () => Promise<T>): Promise<T | undefined> => {
     setActionError(null)
     setBusyAction(action)
     try {
-      await fn()
+      const result = await fn()
       await queryClient.invalidateQueries({ queryKey: ["environments"] })
+      return result
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
         `Failed to ${action}`
       setActionError(message)
+      return undefined
     } finally {
       setBusyAction(null)
     }
@@ -97,6 +106,16 @@ export function EnvironmentDetailPage() {
               <Clock className="size-4" /> Extend 24h
             </Button>
           ) : null}
+          <Button
+            variant="secondary"
+            isLoading={busyAction === "clone"}
+            onClick={async () => {
+              const clone = await runAction("clone", () => environmentsApi.clone(environmentId))
+              if (clone) navigate(`/environments/${clone.id}`)
+            }}
+          >
+            <Copy className="size-4" /> Clone
+          </Button>
           {canDelete ? (
             <Button
               variant="danger"
@@ -145,6 +164,21 @@ export function EnvironmentDetailPage() {
               <div>
                 <p className="text-slate-500">Destroyed</p>
                 <p className="text-slate-200">{new Date(environment.destroyed_at).toLocaleString()}</p>
+              </div>
+            ) : null}
+            {cost ? (
+              <div>
+                <p className="text-slate-500">Estimated cost</p>
+                <p className="flex items-center gap-2 text-slate-200">
+                  ${cost.estimated_cost_usd.toFixed(4)}
+                  <Badge tone={cost.basis === "estimated" ? "info" : "neutral"}>
+                    {cost.basis}
+                  </Badge>
+                </p>
+                <p className="text-xs text-slate-500">
+                  {cost.hours_active.toFixed(1)}h active · {cost.cpu_cores} cores ·{" "}
+                  {cost.memory_gb}GB
+                </p>
               </div>
             ) : null}
           </CardContent>

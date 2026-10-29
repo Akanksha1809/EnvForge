@@ -9,7 +9,7 @@ This is a from-scratch, phase-by-phase build. See
 [`docs/roadmap.md`](docs/roadmap.md) for what's implemented vs. planned, and
 [`docs/architecture.md`](docs/architecture.md) for the system design.
 
-## Status: Phases 1–7 done ✅ (of 9)
+## Status: Phases 1–8 done ✅ (of 9)
 
 What works today, for real (no mocks):
 
@@ -54,12 +54,22 @@ What works today, for real (no mocks):
   frontend, Prometheus, Grafana) plus a real local `kind` cluster with
   `ingress-nginx`.
 - **CI**: GitHub Actions for backend, frontend, and Terraform (fmt/validate
-  across all four modules), plus container image scanning.
+  across all modules, including the AWS ones below), plus container image
+  scanning.
+- **Advanced features**: a cost-estimation engine (`estimated` when an
+  application's real resource requests are known, honestly `simulated`
+  otherwise — never claimed as real cloud billing), one-click environment
+  cloning (`POST /environments/{id}/clone`), resource-optimization
+  recommendations derived from live platform state (quota pressure, stale
+  environments, missing config, exhausted job retries), and a full,
+  `terraform validate`-clean AWS cloud Terraform module (VPC/EKS/RDS/
+  ElastiCache/ECR/IRSA) — written, validated, plan-checked, and
+  **deliberately never applied**; see
+  [`docs/cloud-deployment.md`](docs/cloud-deployment.md).
 
-Everything else (the cost engine, cloud Terraform, e2e tests, the final
-demo script) is being built incrementally — see
-[`docs/roadmap.md`](docs/roadmap.md) for the full phase-by-phase status
-and every bug found/fixed along the way.
+Everything else (e2e tests, the final demo script) is being built
+incrementally — see [`docs/roadmap.md`](docs/roadmap.md) for the full
+phase-by-phase status and every bug found/fixed along the way.
 
 ## Quick start
 
@@ -136,6 +146,8 @@ docs/                 Architecture, ADRs, diagrams, guides
 
 Kubernetes/Terraform provisioning in this project targets a **local `kind`
 cluster** by default — genuinely real infrastructure automation, just not
-AWS. The AWS/EKS Terraform modules (Phase 8/9) are written and documented
-but intentionally **not executed** here, since this environment has no AWS
-account or credentials. See `docs/cloud-deployment.md` once it lands.
+AWS. The AWS/EKS Terraform modules (Phase 8) are written, `terraform
+validate`-clean, and plan-checked, but intentionally **never applied**
+here — a deliberate project policy against creating real, billable cloud
+infrastructure, not a limitation of missing credentials. See
+[`docs/cloud-deployment.md`](docs/cloud-deployment.md).

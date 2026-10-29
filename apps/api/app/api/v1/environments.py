@@ -9,6 +9,7 @@ from app.models.enums import EventTrigger
 from app.models.environment import Environment, EnvironmentEvent
 from app.models.user import User
 from app.schemas.common import Page, PageParams
+from app.schemas.cost import EnvironmentCostOut
 from app.schemas.environment import (
     EnvironmentCreateRequest,
     EnvironmentEventOut,
@@ -17,8 +18,8 @@ from app.schemas.environment import (
     EnvironmentOut,
 )
 from app.services import applications as applications_service
+from app.services import cost_engine, rbac
 from app.services import environments as environments_service
-from app.services import rbac
 from app.services.audit import record as audit_record
 
 router = APIRouter()
@@ -271,3 +272,55 @@ async def get_environment_logs(
         )
         for event in events
     ]
+
+
+@router.get("/{environment_id}/cost", response_model=EnvironmentCostOut)
+async def get_environment_cost(
+    environment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> EnvironmentCostOut:
+    environment = await _get_environment_or_404(db, environment_id)
+    application = await applications_service.get_application(db, environment.application_id)
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    result = cost_engine.estimate_environment_cost(environment, application)
+    return EnvironmentCostOut.model_validate(result)
+
+
+@router.post(
+    "/{environment_id}/clone", response_model=EnvironmentOut, status_code=status.HTTP_202_ACCEPTED
+)
+async def clone_environment(
+    environment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Environment:
+    source = await _get_environment_or_404(db, environment_id)
+    application = await applications_service.get_application(db, source.application_id)
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    rbac.require_permission(current_user, rbac.Permission.ENVIRONMENT_CREATE)
+    await rbac.require_team_membership(db, user=current_user, team_id=application.team_id)
+
+    try:
+        cloned = await environments_service.clone_environment(
+            db, source, application=application, requested_by_user_id=current_user.id
+        )
+    except environments_service.QuotaExceededError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except environments_service.EnvironmentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await audit_record(
+        db,
+        action="environment.clone",
+        resource_type="environment",
+        resource_id=cloned.id,
+        actor_user_id=current_user.id,
+        actor_label=current_user.email,
+        metadata={"cloned_from": environment_id},
+    )
+    return cloned
