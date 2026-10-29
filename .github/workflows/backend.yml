@@ -51,7 +51,10 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv pip install -e . --group dev --system
+        run: |
+          uv venv .venv
+          uv pip install -e . --group dev --python .venv/bin/python
+          echo "$(pwd)/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Ruff lint
         run: ruff check app/ tests/
@@ -95,7 +98,7 @@ jobs:
           push: false
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "envforge-${{ matrix.target }}:${{ github.sha }}"
           format: "table"
