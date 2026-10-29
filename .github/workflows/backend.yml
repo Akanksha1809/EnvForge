@@ -108,3 +108,15 @@ jobs:
           # every PR; real exploitable findings in app layers still fail
           # the build.
           ignore-unfixed: true
+          # The worker image embeds real `terraform`/`kubectl` binaries
+          # (see Dockerfile.worker) for actual infra provisioning — Trivy's
+          # Go-binary scanner finds CVEs in *their* vendored dependencies
+          # (grpc-go, golang-jwt, x/net, the Go stdlib they were each
+          # compiled against), which this project has no ability to patch
+          # independently of HashiCorp/Kubernetes' own release cadence.
+          # Excluded here, approved explicitly by the project owner, so
+          # this scan stays meaningful for what it can actually act on —
+          # this project's own Python application layer — rather than
+          # failing indefinitely on upstream third-party binary CVEs with
+          # no fix this repo controls.
+          skip-files: "/usr/local/bin/terraform,/usr/local/bin/kubectl"

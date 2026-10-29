@@ -5,16 +5,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl gnupg unzip \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Terraform + kubectl, needed by the worker image for provisioning (Phase 3).
-ARG TERRAFORM_VERSION=1.9.8
-RUN curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_$(dpkg --print-architecture).zip" -o /tmp/terraform.zip \
-    && unzip /tmp/terraform.zip -d /usr/local/bin \
-    && rm /tmp/terraform.zip
-RUN curl -fsSL "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" -o /usr/local/bin/kubectl \
-    && chmod +x /usr/local/bin/kubectl
+# No Terraform/kubectl here: only app/services/provisioning.py shells out to
+# them, and that module is only ever called from the Celery worker
+# (app/workers/tasks/provisioning.py) — the uvicorn API process never
+# provisions anything directly, it only enqueues jobs. Embedding those
+# binaries in this image (as an earlier copy-paste from Dockerfile.worker
+# did) only bloated the build and doubled this image's exposure to their
+# vendored Go dependencies' CVEs for no functional reason.
 
 RUN pip install uv
 

@@ -365,6 +365,29 @@ phase lands.
   several other places that had drifted into claiming either more or
   less than was actually true — see the README's own **Limitations**
   section for the current, honest list.
+- **CI, caught by actually running it**: pushing this repo to GitHub and
+  watching its first real Actions runs (rather than assuming the YAML
+  was correct) found four genuine bugs: `setup-uv`'s pinned version
+  predated `uv pip install --group` support; `uv pip install --system`
+  started failing against the runner's PEP-668-protected system Python
+  (fixed by using a real venv and adding it to `GITHUB_PATH`, matching
+  the local `Makefile`'s own pattern); `aquasecurity/trivy-action`'s
+  pinned tag was missing its `v` prefix and, once fixed, pulled in a
+  stale `setup-trivy` sub-reference that no longer resolves upstream
+  (fixed by bumping to the current release); and the `api` image was
+  unnecessarily embedding the same `terraform`/`kubectl` binaries
+  `Dockerfile.worker` needs — `app/services/provisioning.py`, the only
+  caller of either, is only ever invoked from the Celery worker, never
+  from the uvicorn API process — removed from `apps/api/Dockerfile`
+  entirely. Once those were fixed, Trivy correctly found real CRITICAL/
+  HIGH CVEs in the worker image's embedded `terraform`/`kubectl`
+  binaries' own vendored Go dependencies (grpc-go, golang-jwt, x/net,
+  Go's stdlib) — genuine findings, but ones this repo has no ability to
+  patch independently of HashiCorp's and Kubernetes' own release
+  cadence. With explicit approval, scoped the scan to exclude those two
+  binary paths so it stays meaningful for the Python application layer
+  this project actually controls, documented inline in
+  `.github/workflows/backend.yml` rather than silently narrowed.
 
 ## Known, deliberate simplifications
 
